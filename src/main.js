@@ -249,7 +249,7 @@ async function loadModel() {
         if (n === 'LID_L' || n === 'LID_R') { blink.groups.push(o); o.visible = false; }
         if (/^PUPIL_[LR]/.test(n)) eyes.pupils.push({ node: o, side: n[6], base: o.position.clone() });
         if (/^GLINT_[LR]/.test(n)) eyes.glints.push({ node: o, side: n[6], base: o.position.clone() });
-        if (/^IRIS_[LR]/.test(n) && o.isMesh) eyes.irises.push({ node: o, side: n[5] });
+        if (/^IRIS_[LR]/.test(n) && o.isMesh) eyes.irises.push({ node: o, side: n[5], base: o.position.clone() });
       });
       pivot = new THREE.Group(); pivot.add(ori); scene.add(pivot);
       const box = new THREE.Box3().setFromObject(ori); const ctr = box.getCenter(new THREE.Vector3());
@@ -437,12 +437,12 @@ function updateEyes(dt) {
   const len = Math.max(1, Math.hypot(eyes.gaze.x, eyes.gaze.y));
   const px = eyes.gaze.x / len, py = eyes.gaze.y / len;
   const off = new THREE.Vector3();
-  for (const e of [...eyes.pupils, ...eyes.glints]) {
-    const ax = EYE_AXES[e.side]; off.copy(ax.px).multiplyScalar(px).addScaledVector(ax.py, py).multiplyScalar(0.05);
+  // the whole eye (iris, pupil, glints) slides across the white sclera, the way an eyeball turns.
+  // The iris used to be shifted by its texture offset instead, but the bake fills the whole UV square,
+  // so the trailing edge wrapped around and showed up on the other side of the eye.
+  for (const e of [...eyes.irises, ...eyes.pupils, ...eyes.glints]) {
+    const ax = EYE_AXES[e.side]; off.copy(ax.px).multiplyScalar(px).addScaledVector(ax.py, py).multiplyScalar(0.038);
     e.node.position.copy(e.base).add(off);
-  }
-  for (const e of eyes.irises) {
-    const m = e.node.material; if (m && m.map) { m.map.offset.set(-0.3 * px, 0.3 * py); if (m.emissiveMap && m.emissiveMap !== m.map) m.emissiveMap.offset.copy(m.map.offset); }
   }
 }
 
