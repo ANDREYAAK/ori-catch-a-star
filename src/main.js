@@ -134,6 +134,11 @@ const spin = { y: 0, x: 0, vy: 0, dragging: false, lastX: 0, lastY: 0, moved: 0 
 const tail = { bones: [], amp: 14, speed: 2.0, gains: [0.292, 0.364, 0.436, 0.508, 0.580], lags: [0.55, 1.10, 1.65, 2.20, 2.75] };
 const _qz = new THREE.Quaternion(), _qx = new THREE.Quaternion(), _ax = new THREE.Vector3(1, 0, 0), _az = new THREE.Vector3(0, 0, 1);
 const clock = new THREE.Clock();
+const _lifeE = new THREE.Euler(), _lifeQ = new THREE.Quaternion(), _lifeBones = {};
+function life(name, x, y, z) {
+  const b = _lifeBones[name] || (_lifeBones[name] = ori && ori.getObjectByName(name)); if (!b) return;
+  _lifeE.set(x, y, z); _lifeQ.setFromEuler(_lifeE); b.quaternion.multiply(_lifeQ);
+}
 const MODEL_SCALE = 0.43;
 
 function decodeGLB(b64) {
@@ -389,7 +394,7 @@ function updateEyes(dt) {
     ty = THREE.MathUtils.clamp((hs.y - pointer.y) / (innerHeight * 0.3), -1, 1);
   } else {
     eyes.sacc -= dt;
-    if (eyes.sacc <= 0) { eyes.sacc = 0.7 + Math.random() * 1.8; const ang = Math.random() * Math.PI * 2, mag = 0.55 + Math.random() * 0.45; eyes.target.set(Math.cos(ang) * mag, Math.sin(ang) * mag * 0.6); if (Math.random() < 0.25) eyes.target.set(0, 0.15); }
+    if (eyes.sacc <= 0) { eyes.sacc = 0.5 + Math.random() * 1.4; const ang = Math.random() * Math.PI * 2, mag = 0.55 + Math.random() * 0.45; eyes.target.set(Math.cos(ang) * mag, Math.sin(ang) * mag * 0.6); if (Math.random() < 0.25) eyes.target.set(0, 0.15); }
     tx = eyes.target.x; ty = eyes.target.y;
   }
   // model rotation moves the head: look a bit toward the camera side
@@ -400,11 +405,11 @@ function updateEyes(dt) {
   const px = eyes.gaze.x / len, py = eyes.gaze.y / len;
   const off = new THREE.Vector3();
   for (const e of [...eyes.pupils, ...eyes.glints]) {
-    const ax = EYE_AXES[e.side]; off.copy(ax.px).multiplyScalar(px).addScaledVector(ax.py, py).multiplyScalar(0.034);
+    const ax = EYE_AXES[e.side]; off.copy(ax.px).multiplyScalar(px).addScaledVector(ax.py, py).multiplyScalar(0.05);
     e.node.position.copy(e.base).add(off);
   }
   for (const e of eyes.irises) {
-    const m = e.node.material; if (m && m.map) { m.map.offset.set(-0.2 * px, 0.2 * py); if (m.emissiveMap && m.emissiveMap !== m.map) m.emissiveMap.offset.copy(m.map.offset); }
+    const m = e.node.material; if (m && m.map) { m.map.offset.set(-0.3 * px, 0.3 * py); if (m.emissiveMap && m.emissiveMap !== m.map) m.emissiveMap.offset.copy(m.map.offset); }
   }
 }
 
@@ -770,6 +775,15 @@ function tick() {
       const x = wagAmp * 0.25 * tail.gains[i] * Math.sin(wagT - tail.lags[i] + Math.PI / 2);
       _qz.setFromAxisAngle(_az, z); _qx.setFromAxisAngle(_ax, x);
       b.quaternion.multiply(_qz).multiply(_qx);
+    }
+    // procedural life on top of the clips: breathing (chest/spine), head sway, ear swing
+    if (!busy && !fetch_.mode) {
+      const br = Math.sin(t * 2 * Math.PI * 0.32);
+      life('chest', 0.018 * br, 0, 0); life('spine', -0.012 * br, 0, 0);
+      life('neck', 0.02 * Math.sin(t * 1.1), 0.03 * Math.sin(t * 0.7 + 1.0), 0.02 * Math.sin(t * 0.9 + 2.0));
+      life('head', 0.025 * Math.sin(t * 0.8 + 0.5), 0.04 * Math.sin(t * 0.55 + 2.3), 0.03 * Math.sin(t * 0.65 + 4.0));
+      const ear = 0.04 * Math.sin(t * 1.6) + 0.02 * br;
+      life('ear1L', ear, 0, 0); life('ear1R', ear, 0, 0); life('ear2L', ear * 1.4, 0, 0); life('ear2R', ear * 1.4, 0, 0);
     }
     ori.traverse((o) => { if (o.isMesh && o.material.userData.uni) o.material.userData.uni.uTime.value = t; });
     updateEyes(dt);
