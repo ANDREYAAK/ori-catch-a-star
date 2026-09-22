@@ -123,8 +123,39 @@ const phys = { on: false, v: new THREE.Vector3(), vy: 0, bounds: { x: 1.55, zMin
 const BALL_R = 0.072;
 const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const raycaster = new THREE.Raycaster();
-const eyes = { pupils: [], glints: [], irises: [], gaze: new THREE.Vector2(), target: new THREE.Vector2(), sacc: 0 };
+const eyes = { pupils: [], glints: [], irises: [], scleras: [], pivots: [], gaze: new THREE.Vector2(), target: new THREE.Vector2(), sacc: 0 };
 // Blender driver basis converted to glTF node space (x, z, -y)
+// Build one pivot per eye at the centre of the eyeball sphere (fitted to the iris cap) and hang the iris,
+// pupil and glints on it, so the gaze rotates the eyeball instead of sliding flat discs over the face.
+function buildEyePivots() {
+  for (const side of ['L', 'R']) {
+    const iris = eyes.irises.find((e) => e.side === side); if (!iris) continue;
+    const g = iris.node.geometry.attributes.position;
+    // least squares sphere fit: |p|^2 = 2p.c + (R^2 - |c|^2)
+    const A = [], b = [];
+    for (let i = 0; i < g.count; i += 3) {
+      const x = g.getX(i), y = g.getY(i), z = g.getZ(i);
+      A.push([2 * x, 2 * y, 2 * z, 1]); b.push(x * x + y * y + z * z);
+    }
+    const n = 4, AtA = Array.from({ length: n }, () => new Array(n).fill(0)), Atb = new Array(n).fill(0);
+    for (let k = 0; k < A.length; k++) for (let i = 0; i < n; i++) { Atb[i] += A[k][i] * b[k]; for (let j = 0; j < n; j++) AtA[i][j] += A[k][i] * A[k][j]; }
+    for (let i = 0; i < n; i++) {                                   // gaussian elimination
+      let p = i; for (let r = i + 1; r < n; r++) if (Math.abs(AtA[r][i]) > Math.abs(AtA[p][i])) p = r;
+      [AtA[i], AtA[p]] = [AtA[p], AtA[i]]; [Atb[i], Atb[p]] = [Atb[p], Atb[i]];
+      if (Math.abs(AtA[i][i]) < 1e-12) continue;
+      for (let r = 0; r < n; r++) { if (r === i) continue; const f = AtA[r][i] / AtA[i][i]; for (let c2 = i; c2 < n; c2++) AtA[r][c2] -= f * AtA[i][c2]; Atb[r] -= f * Atb[i]; }
+    }
+    const cx = Atb[0] / AtA[0][0], cy = Atb[1] / AtA[1][1], cz = Atb[2] / AtA[2][2];
+    const centreLocal = new THREE.Vector3(cx, cy, cz);              // in the iris mesh's own space
+    const centre = iris.node.localToWorld(centreLocal.clone());
+    const parent = iris.node.parent;
+    const pivot = new THREE.Group(); pivot.name = 'EYEBALL_' + side;
+    parent.add(pivot); pivot.position.copy(parent.worldToLocal(centre.clone()));
+    for (const e of [iris, ...eyes.pupils.filter((p) => p.side === side), ...eyes.glints.filter((p) => p.side === side)]) pivot.attach(e.node);
+    eyes.pivots.push({ node: pivot, side });
+  }
+}
+
 const EYE_AXES = {
   L: { px: new THREE.Vector3(0.87777, 0.03979, -0.47743), py: new THREE.Vector3(0.05253, -0.99853, 0.01336) },
   R: { px: new THREE.Vector3(0.87520, -0.04017, 0.48210), py: new THREE.Vector3(-0.05980, -0.99789, 0.02540) },
@@ -132,6 +163,7 @@ const EYE_AXES = {
 const spin = { y: 0, x: 0, vy: 0, dragging: false, lastX: 0, lastY: 0, moved: 0 };
 // procedural tail wag (port of the Blender drivers: amp deg, speed Hz, per-bone gain and phase lag)
 const tail = { bones: [], amp: 14, speed: 2.0, gains: [0.292, 0.364, 0.436, 0.508, 0.580], lags: [0.55, 1.10, 1.65, 2.20, 2.75] };
+const _eq = new THREE.Quaternion(), _eq2 = new THREE.Quaternion();
 const _qz = new THREE.Quaternion(), _qx = new THREE.Quaternion(), _ax = new THREE.Vector3(1, 0, 0), _az = new THREE.Vector3(0, 0, 1);
 const clock = new THREE.Clock();
 const _lifeE = new THREE.Euler(), _lifeQ = new THREE.Quaternion(), _lifeBones = {};
@@ -250,7 +282,9 @@ async function loadModel() {
         if (/^PUPIL_[LR]/.test(n)) eyes.pupils.push({ node: o, side: n[6], base: o.position.clone() });
         if (/^GLINT_[LR]/.test(n)) eyes.glints.push({ node: o, side: n[6], base: o.position.clone() });
         if (/^IRIS_[LR]/.test(n) && o.isMesh) eyes.irises.push({ node: o, side: n[5], base: o.position.clone() });
+        if (/^SCLERA_[LR]/.test(n) && o.isMesh) eyes.scleras.push({ node: o, side: n[7] });
       });
+      buildEyePivots();
       pivot = new THREE.Group(); pivot.add(ori); scene.add(pivot);
       const box = new THREE.Box3().setFromObject(ori); const ctr = box.getCenter(new THREE.Vector3());
       ori.position.set(-ctr.x, 0, -ctr.z);
@@ -440,7 +474,14 @@ function updateEyes(dt) {
   // the whole eye (iris, pupil, glints) slides across the white sclera, the way an eyeball turns.
   // The iris used to be shifted by its texture offset instead, but the bake fills the whole UV square,
   // so the trailing edge wrapped around and showed up on the other side of the eye.
-  for (const e of [...eyes.irises, ...eyes.pupils, ...eyes.glints]) {
+  const MAXA = THREE.MathUtils.degToRad(15);
+  for (const p of eyes.pivots) {
+    const ax = EYE_AXES[p.side];
+    _eq.setFromAxisAngle(ax.py, -px * MAXA);                 // look left / right
+    _eq2.setFromAxisAngle(ax.px, -py * MAXA);                // look up / down
+    p.node.quaternion.copy(_eq).multiply(_eq2);
+  }
+  if (!eyes.pivots.length) for (const e of [...eyes.irises, ...eyes.pupils, ...eyes.glints]) {
     const ax = EYE_AXES[e.side]; off.copy(ax.px).multiplyScalar(px).addScaledVector(ax.py, py).multiplyScalar(0.038);
     e.node.position.copy(e.base).add(off);
   }
