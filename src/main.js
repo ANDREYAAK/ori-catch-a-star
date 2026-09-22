@@ -687,12 +687,14 @@ addEventListener('pointerup', (e) => {
       const q0 = floorPointRaw(a[0], a[1]);
       const v = p1.clone().sub(p0).divideScalar(dt); v.y = 0;
       const disp = p1.clone().sub(q0); disp.y = 0;
-      const upPx = a[1] - b[1]; const lift = Math.max(0, upPx) / innerHeight;
+      const upPx = a[1] - b[1]; const lift = THREE.MathUtils.clamp(Math.max(0, upPx) / (innerHeight * 0.35), 0, 1);   // a third of the screen = full-power throw
       v.z *= 0.35; disp.z *= 0.35;
       const touch = e.pointerType === 'touch';
       if (touch) { const gestureV = disp.clone().multiplyScalar(6.0); if (gestureV.length() > v.length()) v.copy(gestureV); else v.multiplyScalar(1.4); }
       else if (v.length() < 0.8 && disp.length() > 0.15) v.copy(disp).multiplyScalar(4.0);
-      if (v.length() > 0.5 || lift > 0.08) { v.z = THREE.MathUtils.clamp(v.z, -2.0, 2.0); flickBall(v.clampLength(0, 7.5), 1.2 + lift * 8.0); }
+      // an upward gesture also sends the ball away from the viewer so it arcs across the scene
+      if (lift > 0.05) v.z -= lift * 2.2;
+      if (v.length() > 0.5 || lift > 0.05) { v.z = THREE.MathUtils.clamp(v.z, -2.6, 2.0); flickBall(v.clampLength(0, 7.5), 1.2 + lift * 9.0); }
     } catch (err) { console.error('flick', err); }
     return;
   }
