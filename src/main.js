@@ -765,7 +765,7 @@ canvas.style.touchAction = 'none';
 canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 canvas.addEventListener('touchstart', (e) => { if (e.touches.length === 1) e.preventDefault(); }, { passive: false });
 
-function toast(msg) { hint.textContent = msg; hint.style.opacity = 1; setTimeout(() => { hint.style.opacity = 0; hint.textContent = 'Погладьте Ори по голове'; }, 1800); }
+function toast(msg) { hint.textContent = msg; hint.style.opacity = 1; setTimeout(() => { hint.style.opacity = 0; hint.textContent = 'Покрутите Ори пальцем'; }, 1800); }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------- resize ---------- */
@@ -823,13 +823,9 @@ function tick() {
     }
     ori.traverse((o) => { if (o.isMesh && o.material.userData.uni) o.material.userData.uni.uTime.value = t; });
     updateEyes(dt); updateBlink(dt);
-    // petting hit test
-    const hs = headScreen();
-    if (hs) {
-      const r = Math.min(innerWidth, innerHeight) * 0.11;
-      const over = pointer.x >= 0 && Math.hypot(pointer.x - hs.x, pointer.y - hs.y) < r && (isMobile ? pointer.down : true) && spin.moved < 12;
-      if (over && !fetch_.mode) { petTimer = 0.6; if (!petting) startPet(); } else { petTimer -= dt; if (petting && petTimer < 0) stopPet(); }
-    }
+    // touching the dog only rotates it: the pet reaction fired on every touch and read as a twitch,
+    // so it is off (startPet/stopPet stay available for the command menu)
+    if (petting) stopPet();
   }
   stepBallPhysics(dt);
   if (fetch_.ball && fetch_.ball.visible && !phys.on && fetch_.ball.parent === scene && !busy) fetch_.ball.position.y = floorY();
