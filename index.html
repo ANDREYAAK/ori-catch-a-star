@@ -17,7 +17,7 @@
   --glass:rgba(250,250,252,.09); --pill:rgba(250,250,252,.08); --pill-line:rgba(250,250,252,.16);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;overscroll-behavior:none}
+html,body{height:100%;overscroll-behavior:none;touch-action:none;position:fixed;width:100%}
 body{
   font-family:'MTS Text',system-ui,-apple-system,sans-serif;color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;
   background:
@@ -48,6 +48,10 @@ h1 em{font-style:normal;color:var(--mts-red)}
 @keyframes cardIn{from{opacity:0;transform:translateY(18px) scale(.96)}to{opacity:1;transform:none}}
 .card{margin-top:14px;width:100%;max-width:400px;background:var(--glass);border:1px solid rgba(255,255,255,.18);border-radius:26px;padding:34px 22px 22px;position:relative;
   box-shadow:0 24px 60px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.22);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.card-x{position:absolute;top:10px;right:12px;width:28px;height:28px;border-radius:50%;border:1px solid var(--pill-line);background:var(--pill);color:var(--ink-dim);font:400 18px/1 'MTS Text';cursor:pointer;display:flex;align-items:center;justify-content:center;pointer-events:auto}
+.card-x:hover{color:var(--ink)}
+.screen.show .top{pointer-events:auto}
+#s3.hidecard .top{display:none!important}
 .card .star{position:absolute;top:-26px;left:50%;transform:translateX(-50%);width:52px;height:52px;filter:drop-shadow(0 0 14px rgba(217,243,139,.95))}
 .card .from{font:400 12px/1.3 'MTS Text';color:var(--ink-dim)}
 .card .phrase{font:500 clamp(21px,6.2vw,26px)/1.18 'MTS Wide';margin:14px 0 18px;color:var(--ink)}
@@ -86,6 +90,7 @@ body{transition:background .8s}
     <button data-cmd="walk">Гулять</button>
     <button data-cmd="lick">Лизнуть</button>
     <button data-cmd="jump">Прыжок</button>
+    <button data-cmd="showcard" id="showCard" style="display:none">Моя звезда</button>
     <button data-cmd="reset">Сбросить день</button>
   </div>
 
@@ -110,6 +115,7 @@ body{transition:background .8s}
     <div class="top" style="margin-top:68px;width:100%;display:flex;flex-direction:column;align-items:center">
       <div class="kicker">Ваша звезда на сегодня</div>
       <div class="card">
+        <button class="card-x" id="cardClose" aria-label="Скрыть">×</button>
         <svg class="star" viewBox="0 0 64 64" fill="#FF0032"><path d="M32 2c2 16 10 26 30 30-20 4-28 14-30 30-2-16-10-26-30-30 20-4 28-14 30-30z"/></svg>
         <div class="from">Ори поймал для вас звезду</div>
         <div class="phrase" id="phrase">…</div>
@@ -340,6 +346,6 @@ body{transition:background .8s}
   ]
 }
 ;</script>
-<script src="assets/bundle.js?v=1790080534536"></script>
+<script src="assets/bundle.js?v=1790080874151"></script>
 </body>
 </html>

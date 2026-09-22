@@ -635,6 +635,7 @@ function stopPet() {
 function command(name) {
   if (busy) return;
   if (name === 'reset') { store.clear(); location.reload(); return; }
+  if (name === 'showcard') { screens.s3.classList.remove('hidecard'); $('#showCard').style.display = 'none'; setFrame('s3'); train.classList.remove('show'); return; }
   if (!actions[name]) return;
   petting = false; busy = true;
   const loop = CLIPS[name].loop;
@@ -649,6 +650,7 @@ $('#share').addEventListener('click', async () => {
   try { if (navigator.share) await navigator.share({ title: 'Поймай звезду', text }); else { await navigator.clipboard.writeText(text); toast('Текст скопирован'); } } catch {}
 });
 $('#trainToggle').addEventListener('click', () => train.classList.toggle('show'));
+$('#cardClose').addEventListener('click', () => { screens.s3.classList.add('hidecard'); $('#showCard').style.display = ''; setFrame('s1'); });
 document.querySelectorAll('#throwBtn,[data-throw]').forEach((b) => b.addEventListener('click', armThrow));
 function syncThrowBtns() { document.querySelectorAll('#throwBtn,[data-throw]').forEach((b) => { b.classList.toggle('armed', fetch_.mode); b.textContent = fetch_.mode ? 'Тапните, куда бросить' : 'Бросить мяч'; }); }
 train.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) command(b.dataset.cmd); });
@@ -675,7 +677,7 @@ canvas.addEventListener('pointerdown', (e) => {
     if (Math.hypot(e.clientX - bx, e.clientY - by) < Math.min(innerWidth, innerHeight) * 0.12) { phys.grab = { id: e.pointerId, pts: [[e.clientX, e.clientY, performance.now()]] }; try { canvas.setPointerCapture(e.pointerId); } catch {} return; }
   }
   pointer.x = e.clientX; pointer.y = e.clientY; pointer.down = true; eyes.hold = 4; spin.dragging = true; spin.lastX = e.clientX; spin.lastY = e.clientY; spin.moved = 0; try { canvas.setPointerCapture(e.pointerId); } catch {} });
-addEventListener('pointerup', (e) => {
+function onPointerEnd(e) {
   if (phys.grab && phys.grab.id === e.pointerId) {
     const pts = phys.grab.pts; phys.grab = null;
     try {
@@ -699,8 +701,10 @@ addEventListener('pointerup', (e) => {
     return;
   }
   pointer.down = false; spin.dragging = false;
-  if (fetch_.mode && spin.moved < 10 && e.target === canvas) throwBall(e.clientX, e.clientY);
-});
+  if (e.type === 'pointerup' && fetch_.mode && spin.moved < 10 && e.target === canvas) throwBall(e.clientX, e.clientY);
+}
+addEventListener('pointerup', onPointerEnd);
+addEventListener('pointercancel', onPointerEnd);
 canvas.addEventListener('dblclick', () => { spin.y = 0; spin.x = 0; spin.vy = 0; zoom.target = 1.3; });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoom.target = THREE.MathUtils.clamp(zoom.target * (1 + Math.sign(e.deltaY) * 0.08), zoom.min, zoom.max); }, { passive: false });
 const touches = new Map();
@@ -717,6 +721,8 @@ addEventListener('pointerup', (e) => { touches.delete(e.pointerId); if (touches.
 addEventListener('pointercancel', (e) => { touches.delete(e.pointerId); zoom.pinch = 0; });
 addEventListener('pointerleave', () => { pointer.x = -1; spin.dragging = false; });
 canvas.style.touchAction = 'none';
+canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+canvas.addEventListener('touchstart', (e) => { if (e.touches.length === 1) e.preventDefault(); }, { passive: false });
 
 function toast(msg) { hint.textContent = msg; hint.style.opacity = 1; setTimeout(() => { hint.style.opacity = 0; hint.textContent = 'Погладьте Ори по голове'; }, 1800); }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
