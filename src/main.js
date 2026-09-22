@@ -539,11 +539,11 @@ async function throwBallInner(cx, cy) {
   // bring it back: face home, trot back with the ball in the mouth
   const home = base.clone(); fetch_.pos = null;
   if (dist > 0.35) { fetch_.yaw = Math.atan2(home.x - stop.x, home.z - stop.z) - baseY; play('walk', { fade: 0.2 }); await wait(Math.max(600, runT * 1000)); }
-  fetch_.yaw = 0; await waitYaw(); fetch_.yaw = null;
+  fetch_.yaw = 0; await waitYaw(); spin.y = 0; spin.x = 0; spin.vy = 0; fetch_.yaw = null;
   // drop it beside the paws
   const dropP = playAsync('drop', 0.2);
   await wait((1023 - 1010) / 24 * 1000);
-  holdJaw = false; scene.attach(ball);
+  holdJaw = false; scene.attach(ball); phys.on = false; phys.v.set(0, 0, 0); phys.vy = 0;
   const from = ball.position.clone(); const side = Math.random() < 0.5 ? -1 : 1;
   const to = new THREE.Vector3(pivot.position.x + side * 0.38, 0.072, pivot.position.z + 0.5); const d1 = performance.now();
   await new Promise((res) => { const step = () => { const t = Math.min(1, (performance.now() - d1) / 600); ball.position.lerpVectors(from, to, t); ball.position.y = THREE.MathUtils.lerp(from.y, to.y, t * t) + (t > 0.7 ? Math.sin((t - 0.7) / 0.3 * Math.PI) * 0.08 : 0); ball.rotation.x += 0.1; if (t < 1) requestAnimationFrame(step); else { ball.position.copy(to); res(); } }; step(); });
@@ -643,9 +643,9 @@ async function chaseBall() {
     // bring it back
     const here = pivot.position.clone(); const back = base.clone().sub(here); back.y = 0;
     if (back.length() > 0.25) { fetch_.yaw = Math.atan2(back.x, back.z) - baseY; fetch_.pos = base.clone(); play('walk', { fade: 0.2 }); const w0 = performance.now(); while (new THREE.Vector2(pivot.position.x - base.x, pivot.position.z - base.z).length() > 0.06 && performance.now() - w0 < 5000) await wait(40); }
-    fetch_.pos = null; fetch_.yaw = 0; await waitYaw(); fetch_.yaw = null;
+    fetch_.pos = null; fetch_.yaw = 0; await waitYaw(); spin.y = 0; spin.x = 0; spin.vy = 0; fetch_.yaw = null;
     const dropP = playAsync('drop', 0.2); await wait((1023 - 1010) / 24 * 1000);
-    holdJaw = false; scene.attach(ball);
+    holdJaw = false; scene.attach(ball); phys.on = false; phys.v.set(0, 0, 0); phys.vy = 0;
     const f2 = ball.position.clone(); const side = Math.random() < 0.5 ? -1 : 1; const to = new THREE.Vector3(THREE.MathUtils.clamp(pivot.position.x + side * 0.38, -phys.bounds.x, phys.bounds.x), floorY(), Math.min(pivot.position.z + 0.5, phys.bounds.zMax)); const d1 = performance.now();
     await new Promise((res) => { const step = () => { const t = Math.min(1, (performance.now() - d1) / 600); ball.position.lerpVectors(f2, to, t); ball.position.y = THREE.MathUtils.lerp(f2.y, to.y, t * t) + (t > 0.7 ? Math.sin((t - 0.7) / 0.3 * Math.PI) * 0.08 : 0); if (t < 1) requestAnimationFrame(step); else { ball.position.copy(to); res(); } }; step(); });
     await dropP;
@@ -794,6 +794,9 @@ function tick() {
     else pivot.position.lerp(new THREE.Vector3().fromArray(f.model), 0.06);
     pedestal.position.set(pivot.position.x, pivot.position.y + 0.005, pivot.position.z);
     if (!spin.dragging) { spin.y += spin.vy; spin.vy *= 0.92; spin.x *= 0.95; }
+    // while the dog is fetching, its facing is driven by the chase; fade the user's manual rotation to zero
+    // so releasing the fetch yaw cannot snap it back sideways when it delivers the ball
+    if (fetch_.yaw !== null) { const kd = 1 - Math.pow(0.02, dt); spin.y -= spin.y * kd; spin.x -= spin.x * kd; spin.vy = 0; }
     const baseY = frame === 's1' ? -0.35 : frame === 's3' ? -0.5 : -0.2;
     const wantYaw = fetch_.yaw !== null ? baseY + fetch_.yaw : Math.sin(t * 0.35) * 0.06 + baseY + spin.y;
     let dy = wantYaw - pivot.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); pivot.rotation.y += dy * (fetch_.yaw !== null ? 0.18 : 1);
