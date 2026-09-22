@@ -4,6 +4,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 
 /* ---------- clip table (frames in the single Blender action, 24 fps) ---------- */
 const FPS = 24;
+// fetching is a run: the walk cycle at RUN_ANIM speed while the body travels at RUN_SPEED (units/s)
+const RUN_SPEED = 2.1, RUN_ANIM = 2.2;
 const CLIPS = {
   idle:  { a: 660, b: 740, loop: true },
   lick:  { a: 170, b: 220 },
@@ -196,7 +198,7 @@ function setupMaterials(root) {
     if (!o.isMesh) return;
     o.frustumCulled = false;
     const m = o.material; if (!m) return;
-    const name = m.name || '';
+    const name = (m.name || '').replace(/\.\d+$/, '');   // tolerate Blender's .001 duplicate suffixes
     if (name === 'WEB_body') {
       const pm = new THREE.MeshPhysicalMaterial({
         map: m.map, color: 0xe4e1ee, roughness: 0.36, metalness: 0,
@@ -269,10 +271,10 @@ function makeAction(gltfClip, name) {
   return act;
 }
 
-function play(name, { fade = 0.25, onDone } = {}) {
+function play(name, { fade = 0.25, onDone, speed = 1 } = {}) {
   const next = actions[name]; if (!next) return;
   if (current && current !== next) current.fadeOut(fade);
-  next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(fade).play();
+  next.reset().setEffectiveTimeScale(speed).setEffectiveWeight(1).fadeIn(fade).play();
   current = next;
   if (onDone) {
     const cb = (e) => { if (e.action === next) { mixer.removeEventListener('finished', cb); onDone(); } };
@@ -552,8 +554,8 @@ async function throwBallInner(cx, cy) {
   fetch_.yaw = (kind === 'mouth' || dist < 0.35) ? 0 : Math.atan2(dir.x, dir.z) - baseY;
   const stop = dist > 0.35 ? target.clone().addScaledVector(dir.clone().normalize(), -0.3) : base.clone();
   fetch_.pos = stop;
-  const runT = THREE.MathUtils.clamp(dist / 1.6, 0.2, 1.1);
-  if (dist > 0.4) play('walk', { fade: 0.15 });
+  const runT = THREE.MathUtils.clamp(dist / RUN_SPEED, 0.2, 1.1);
+  if (dist > 0.4) play('walk', { fade: 0.15, speed: RUN_ANIM });
   // catch moment inside each clip (seconds from clip start) and where the ball should be then
   const catchAt = { mouth: 13 / 24, paw: 11 / 24, two: 18 / 24 }[kind];
   const flight = runT + catchAt; const t0 = performance.now(); const apex = 1.0 + dist * 0.25;
@@ -591,7 +593,7 @@ async function throwBallInner(cx, cy) {
   for (let i = 0; i < 60 && !done; i++) await wait(50);
   // bring it back: face home, trot back with the ball in the mouth
   const home = base.clone(); fetch_.pos = null;
-  if (dist > 0.35) { fetch_.yaw = Math.atan2(home.x - stop.x, home.z - stop.z) - baseY; play('walk', { fade: 0.2 }); await wait(Math.max(600, runT * 1000)); }
+  if (dist > 0.35) { fetch_.yaw = Math.atan2(home.x - stop.x, home.z - stop.z) - baseY; play('walk', { fade: 0.2, speed: RUN_ANIM }); await wait(Math.max(450, runT * 1000)); }
   fetch_.yaw = 0; await waitYaw(); spin.y = 0; spin.x = 0; spin.vy = 0; fetch_.yaw = null;
   // drop it beside the paws
   const dropP = playAsync('drop', 0.2);
@@ -666,8 +668,8 @@ async function chaseBall() {
   const ball = fetch_.ball; const base = new THREE.Vector3().fromArray(FRAMES[frame].model);
   const baseY = frame === 's1' ? -0.35 : frame === 's3' ? -0.5 : -0.2;
   try {
-    play('walk', { fade: 0.15 });
-    const SPEED = 1.35; let caught = false; const t0 = performance.now();
+    play('walk', { fade: 0.15, speed: RUN_ANIM });
+    const SPEED = RUN_SPEED; let caught = false; const t0 = performance.now();
     // run after the ball until close enough; the dog follows the ball position each frame
     while (!caught && performance.now() - t0 < 12000) {
       if (performance.now() - t0 > 6000 && ball.position.y > floorY() + 0.3) { phys.vy = -1; }
@@ -695,7 +697,7 @@ async function chaseBall() {
     await clipP;
     // bring it back
     const here = pivot.position.clone(); const back = base.clone().sub(here); back.y = 0;
-    if (back.length() > 0.25) { fetch_.yaw = Math.atan2(back.x, back.z) - baseY; fetch_.pos = base.clone(); play('walk', { fade: 0.2 }); const w0 = performance.now(); while (new THREE.Vector2(pivot.position.x - base.x, pivot.position.z - base.z).length() > 0.06 && performance.now() - w0 < 5000) await wait(40); }
+    if (back.length() > 0.25) { fetch_.yaw = Math.atan2(back.x, back.z) - baseY; fetch_.pos = base.clone(); play('walk', { fade: 0.2, speed: RUN_ANIM }); const w0 = performance.now(); while (new THREE.Vector2(pivot.position.x - base.x, pivot.position.z - base.z).length() > 0.06 && performance.now() - w0 < 5000) await wait(40); }
     fetch_.pos = null; fetch_.yaw = 0; await waitYaw(); spin.y = 0; spin.x = 0; spin.vy = 0; fetch_.yaw = null;
     const dropP = playAsync('drop', 0.2); await wait((1023 - 1010) / 24 * 1000);
     holdJaw = false; scene.attach(ball); phys.on = false; phys.v.set(0, 0, 0); phys.vy = 0;
@@ -843,7 +845,7 @@ function tick() {
   view.pos.lerp(view.tPos, 0.06); view.look.lerp(view.tLook, 0.06);
   camera.position.copy(view.pos); camera.lookAt(view.look);
   if (ori) {
-    if (fetch_.pos) { const tgt = fetch_.pos; const dv = tgt.clone().sub(pivot.position); dv.y = 0; const L = dv.length(); const stepL = Math.min(L, 1.35 * dt); if (L > 1e-4) pivot.position.addScaledVector(dv.normalize(), stepL); }
+    if (fetch_.pos) { const tgt = fetch_.pos; const dv = tgt.clone().sub(pivot.position); dv.y = 0; const L = dv.length(); const stepL = Math.min(L, RUN_SPEED * dt); if (L > 1e-4) pivot.position.addScaledVector(dv.normalize(), stepL); }
     else pivot.position.lerp(new THREE.Vector3().fromArray(f.model), 0.06);
     pedestal.position.set(pivot.position.x, pivot.position.y + 0.005, pivot.position.z);
     if (!spin.dragging) { spin.y += spin.vy; spin.vy *= 0.92; spin.x *= 0.95; }

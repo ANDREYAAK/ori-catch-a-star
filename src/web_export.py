@@ -38,6 +38,8 @@ web.select_set(True); bpy.ops.object.modifier_apply(modifier='DEC'); log('decima
 am=web.modifiers.new('ARM','ARMATURE'); am.object=rig; web.parent=rig; web.matrix_parent_inverse=an.matrix_parent_inverse.copy()
 # ---------- 3. simple materials ----------
 def simple(name,color=(1,1,1,1),rough=0.4,emis=None,alpha=1.0,tex=None,vcol=False,emit_strength=1.0,metal=0.0):
+    old_m=bpy.data.materials.get(name)
+    if old_m: bpy.data.materials.remove(old_m)          # keep exported names exact (no .001 suffixes)
     m=bpy.data.materials.new(name); m.use_nodes=True; nt=m.node_tree
     for n in list(nt.nodes): nt.nodes.remove(n)
     out=nt.nodes.new('ShaderNodeOutputMaterial'); p=nt.nodes.new('ShaderNodeBsdfPrincipled'); nt.links.new(p.outputs[0],out.inputs[0])
@@ -79,7 +81,7 @@ for n,m in parts.items():
 # ---------- 3b. ink curves (brows, mouth line, philtrum) -> meshes ----------
 m_ink=simple('WEB_ink',color=(0.05,0.02,0.11,1),rough=0.8)
 ink_objs=[]
-for n in ('BROW_L','BROW_R','MOUTH_line','PHILTRUM_line'):
+for n in ('BROW_L','BROW_R','MOUTH_line','PHILTRUM_line')+tuple(f'LASH_{sd}_{k}' for sd in 'LR' for k in ('up0','up1','up2','up3','lo0','lo1')):
     src=bpy.data.objects[n]; c=src.copy(); c.data=src.data.copy(); c.name='INK_'+n; sc.collection.objects.link(c)
     for o in bpy.context.view_layer.objects: o.select_set(False)
     c.select_set(True); bpy.context.view_layer.objects.active=c; c.hide_set(False); c.hide_viewport=False
