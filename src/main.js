@@ -167,9 +167,21 @@ const _eq = new THREE.Quaternion(), _eq2 = new THREE.Quaternion();
 const _qz = new THREE.Quaternion(), _qx = new THREE.Quaternion(), _ax = new THREE.Vector3(1, 0, 0), _az = new THREE.Vector3(0, 0, 1);
 const clock = new THREE.Clock();
 const _lifeE = new THREE.Euler(), _lifeQ = new THREE.Quaternion(), _lifeBones = {};
+// Procedural offsets on top of the clips. three.js skips writing a bone when the clip value did not
+// change since the last frame, so an offset multiplied in every frame would pile up and spin the bone.
+// Every offset is remembered and taken off again before the mixer runs.
+const _procOff = new Map(), _procInv = new THREE.Quaternion();
+function procUndo() {
+  for (const [b, q] of _procOff) b.quaternion.multiply(_procInv.copy(q).invert());
+  _procOff.clear();
+}
+function procApply(b, q) {
+  b.quaternion.multiply(q);
+  const prev = _procOff.get(b); if (prev) prev.multiply(q); else _procOff.set(b, q.clone());
+}
 function life(name, x, y, z) {
   const b = _lifeBones[name] || (_lifeBones[name] = ori && ori.getObjectByName(name)); if (!b) return;
-  _lifeE.set(x, y, z); _lifeQ.setFromEuler(_lifeE); b.quaternion.multiply(_lifeQ);
+  _lifeE.set(x, y, z); _lifeQ.setFromEuler(_lifeE); procApply(b, _lifeQ);
 }
 const MODEL_SCALE = 0.43;
 
@@ -842,6 +854,7 @@ function tick() {
     const wantYaw = fetch_.yaw !== null ? baseY + fetch_.yaw : Math.sin(t * 0.35) * 0.06 + baseY + spin.y;
     let dy = wantYaw - pivot.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); pivot.rotation.y += dy * (fetch_.yaw !== null ? 0.18 : 1);
     pivot.rotation.x = spin.x;
+    procUndo();
     mixer.update(dt);
     if (holdJaw && jawBone) { const e = new THREE.Euler().setFromQuaternion(jawBone.quaternion, 'XYZ'); if (e.x < JAW_HOLD) { e.x = JAW_HOLD; jawBone.quaternion.setFromEuler(e); } }
     // tail wag on top of the clips
@@ -851,7 +864,7 @@ function tick() {
       const z = wagAmp * tail.gains[i] * Math.sin(wagT - tail.lags[i]);
       const x = wagAmp * 0.25 * tail.gains[i] * Math.sin(wagT - tail.lags[i] + Math.PI / 2);
       _qz.setFromAxisAngle(_az, z); _qx.setFromAxisAngle(_ax, x);
-      b.quaternion.multiply(_qz).multiply(_qx);
+      procApply(b, _qz); procApply(b, _qx);
     }
     // procedural life on top of the clips: breathing (chest/spine), head sway, ear swing
     if (!busy && !fetch_.mode) {
