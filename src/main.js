@@ -192,6 +192,11 @@ function setupMaterials(root) {
            #endif`);
       };
       pm.name = name; o.material = pm;
+    } else if (name === 'WEB_lid') {
+      // eyelid shutters: same pale crystal surface as the body, but no baked atlas (the lids have no UVs)
+      o.material = new THREE.MeshPhysicalMaterial({ color: 0xe8e4f2, roughness: 0.34, metalness: 0,
+        clearcoat: 0.45, clearcoatRoughness: 0.25, sheen: 0.2, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xd9bfff), envMapIntensity: 0.9 });
+      o.material.name = name; o.renderOrder = 2;
     } else if (name === 'WEB_mouth') {
       o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0 });
     } else if (name === 'WEB_lens') {
@@ -239,8 +244,9 @@ async function loadModel() {
       ori = gltf.scene; ori.scale.setScalar(MODEL_SCALE);
       setupMaterials(ori);
       ori.traverse((o) => {
-        if (o.isBone) { if (o.name === 'head') headBone = o; if (o.name === 'jaw') jawBone = o; if (/^tail[1-5]$/.test(o.name)) tail.bones[+o.name[4] - 1] = o; }
+        if (o.isBone) { if (o.name === 'head') headBone = o; if (o.name === 'jaw') jawBone = o; if (o.name === 'lidL' || o.name === 'lidR') blink.bones.push(o); if (/^tail[1-5]$/.test(o.name)) tail.bones[+o.name[4] - 1] = o; }
         const n = o.name || '';
+        if (n === 'LID_L' || n === 'LID_R') { blink.groups.push(o); o.visible = false; }
         if (/^PUPIL_[LR]/.test(n)) eyes.pupils.push({ node: o, side: n[6], base: o.position.clone() });
         if (/^GLINT_[LR]/.test(n)) eyes.glints.push({ node: o, side: n[6], base: o.position.clone() });
         if (/^IRIS_[LR]/.test(n) && o.isMesh) eyes.irises.push({ node: o, side: n[5] });
@@ -285,6 +291,33 @@ function pickPhrase() {
 }
 
 let busy = false, petting = false, petTimer = 0;
+// eyelid shutters (bones lidL/lidR: scale y,z 0.02 = open, 1 = closed). Blink every 2.5-6 s, half-closed while petted.
+const blink = { bones: [], groups: [], next: 2.5, t: -1, cur: 0, squint: 0 };
+const LID_OPEN = 0.001, LID_SHUT = 1.0;
+function updateBlink(dt) {
+  if (!blink.bones.length) return;
+  // one blink = close 0.07 s, hold 0.03 s, open 0.11 s; then the lid is fully hidden again
+  let k = 0;                                   // 0 = open, 1 = shut
+  if (blink.t >= 0) {
+    blink.t += dt;
+    const c = 0.07, h = 0.03, op = 0.11;
+    if (blink.t < c) k = blink.t / c;
+    else if (blink.t < c + h) k = 1;
+    else if (blink.t < c + h + op) k = 1 - (blink.t - c - h) / op;
+    else { k = 0; blink.t = -1; blink.next = 2.2 + Math.random() * 3.6; }
+  } else {
+    blink.next -= dt;
+    if (blink.next <= 0) blink.t = 0;          // time for the next blink
+  }
+  // happy squint while petted, eased in and out so it never sticks
+  const wantSquint = petting ? 0.5 : 0;
+  blink.squint += (wantSquint - blink.squint) * (1 - Math.pow(0.02, dt));
+  blink.cur = Math.max(k, blink.squint);
+  const s = LID_OPEN + (LID_SHUT - LID_OPEN) * blink.cur;
+  for (const b of blink.bones) b.scale.set(1, s, s);
+  const show = blink.cur > 0.04;               // fully open: the lid is hidden, never a sliver over the eye
+  for (const g of blink.groups) g.visible = show;
+}
 let phraseToday = null;
 
 /* ---------- star with a trail (hero star for the catch) ---------- */
@@ -786,7 +819,7 @@ function tick() {
       life('ear1L', ear, 0, 0); life('ear1R', ear, 0, 0); life('ear2L', ear * 1.4, 0, 0); life('ear2R', ear * 1.4, 0, 0);
     }
     ori.traverse((o) => { if (o.isMesh && o.material.userData.uni) o.material.userData.uni.uTime.value = t; });
-    updateEyes(dt);
+    updateEyes(dt); updateBlink(dt);
     // petting hit test
     const hs = headScreen();
     if (hs) {
@@ -818,6 +851,6 @@ function tick() {
     phraseToday = saved.phrase; $('#phrase').textContent = saved.phrase; showScreen('s3'); setFrame('s3');
   }
   play('idle');
-  window.__ori = { eyes, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
+  window.__ori = { eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
   tick();
 })();
