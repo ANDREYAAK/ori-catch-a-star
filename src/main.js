@@ -150,7 +150,7 @@ function setupMaterials(root) {
     const name = m.name || '';
     if (name === 'WEB_body') {
       const pm = new THREE.MeshPhysicalMaterial({
-        map: m.map, color: 0xd6d0e8, roughness: 0.36, metalness: 0,
+        map: m.map, color: 0xe4e1ee, roughness: 0.36, metalness: 0,
         emissive: 0xffffff, emissiveMap: m.emissiveMap, emissiveIntensity: 1.0,
         clearcoat: 0.45, clearcoatRoughness: 0.25, iridescence: 0.35, iridescenceIOR: 1.5, iridescenceThicknessRange: [150, 400],
         sheen: 0.15, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xd9bfff), envMapIntensity: 0.9,
@@ -169,18 +169,21 @@ function setupMaterials(root) {
           float fbm(vec3 p){ float a = 0.0, w = 0.5; for (int k = 0; k < 4; k++) { a += w * vnoise(p); p *= 2.0; w *= 0.5; } return a; }`)
         .replace('#include <emissivemap_fragment>',
           `#ifdef USE_EMISSIVEMAP
+             // baked Blender emission (sRGB texture, decoded to linear here) gives the exact patch layout from the OPAL shader
              vec4 ec = texture2D( emissiveMap, vEmissiveMapUv );
              float lum = dot(ec.rgb, vec3(0.299, 0.587, 0.114));
-             float spark = smoothstep(0.62, 0.9, lum);
-             // nebula: two fbm layers in rest-pose object space (Blender: noise scale 1.4 and 2.6 on the position), ramp blue->violet->pink
+             float spark = smoothstep(0.66, 0.9, lum);
+             // patch mask from the baked luminance (linear: body median ~0.34, patch cores ~0.5-0.6), fine detail from live noise
              vec3 P = vRest * 2.3;
-             float n1 = fbm(P * 1.4 + vec3(0.0, uTime * 0.02, 0.0));
              float n2 = fbm(P * 2.6 + vec3(7.1, 3.3, uTime * 0.03));
-             float t = clamp((n1 * 0.6 + n2 * 0.4 - 0.28) / 0.46, 0.0, 1.0);
-             vec3 ramp = t < 0.5 ? mix(vec3(0.30, 0.55, 1.0), vec3(0.60, 0.35, 1.0), t / 0.5) : mix(vec3(0.60, 0.35, 1.0), vec3(1.0, 0.50, 0.85), (t - 0.5) / 0.5);
-             float mask = smoothstep(0.34, 0.72, n1 * 0.6 + n2 * 0.4);
-             totalEmissiveRadiance = ramp * mask * 0.85 + vec3(1.0) * spark * 1.0;
-             diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * mix(vec3(1.0), ramp, 0.8), mask);
+             float pb = smoothstep(0.23, 0.50, lum + (n2 - 0.5) * 0.12);
+             float mask = pb * (1.0 - spark);
+             // Blender ramp: violet (0.6,0.35,1) -> pink (1,0.5,0.85), with a blue touch on the patch rims
+             float t = clamp((lum - 0.30) / 0.30 + (n2 - 0.5) * 0.5, 0.0, 1.0);
+             vec3 ramp = t < 0.5 ? mix(vec3(0.42, 0.45, 1.0), vec3(0.62, 0.35, 1.0), t / 0.5) : mix(vec3(0.62, 0.35, 1.0), vec3(1.0, 0.48, 0.86), (t - 0.5) / 0.5);
+             // patches replace the white albedo (so bright lights cannot wash them out) and glow a little
+             diffuseColor.rgb = mix(diffuseColor.rgb, ramp * 0.85, mask * 0.95);
+             totalEmissiveRadiance = ramp * mask * 0.6 + vec3(1.0) * spark * 1.3;
            #endif`);
       };
       pm.name = name; o.material = pm;
