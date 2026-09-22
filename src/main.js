@@ -498,7 +498,7 @@ async function throwBallInner(cx, cy) {
   // bring it back: face home, trot back with the ball in the mouth
   const home = base.clone(); fetch_.pos = null;
   if (dist > 0.35) { fetch_.yaw = Math.atan2(home.x - stop.x, home.z - stop.z) - baseY; play('walk', { fade: 0.2 }); await wait(Math.max(600, runT * 1000)); }
-  fetch_.yaw = null; await wait(450);
+  fetch_.yaw = 0; await waitYaw(); fetch_.yaw = null;
   // drop it beside the paws
   const dropP = playAsync('drop', 0.2);
   await wait((1023 - 1010) / 24 * 1000);
@@ -602,7 +602,7 @@ async function chaseBall() {
     // bring it back
     const here = pivot.position.clone(); const back = base.clone().sub(here); back.y = 0;
     if (back.length() > 0.25) { fetch_.yaw = Math.atan2(back.x, back.z) - baseY; fetch_.pos = base.clone(); play('walk', { fade: 0.2 }); const w0 = performance.now(); while (new THREE.Vector2(pivot.position.x - base.x, pivot.position.z - base.z).length() > 0.06 && performance.now() - w0 < 5000) await wait(40); }
-    fetch_.pos = null; fetch_.yaw = null; await wait(450);
+    fetch_.pos = null; fetch_.yaw = 0; await waitYaw(); fetch_.yaw = null;
     const dropP = playAsync('drop', 0.2); await wait((1023 - 1010) / 24 * 1000);
     holdJaw = false; scene.attach(ball);
     const f2 = ball.position.clone(); const side = Math.random() < 0.5 ? -1 : 1; const to = new THREE.Vector3(THREE.MathUtils.clamp(pivot.position.x + side * 0.38, -phys.bounds.x, phys.bounds.x), floorY(), Math.min(pivot.position.z + 0.5, phys.bounds.zMax)); const d1 = performance.now();
@@ -612,6 +612,15 @@ async function chaseBall() {
   finally { busy = false; holdJaw = false; fetch_.pos = null; fetch_.yaw = null; phys.chase = false; play('idle', { fade: 0.4 }); }
 }
 
+async function waitYaw() {
+  // wait until the pivot has turned to the requested yaw (facing the viewer), max 1.2 s
+  const baseY = frame === 's1' ? -0.35 : frame === 's3' ? -0.5 : -0.2;
+  const t0 = performance.now();
+  while (performance.now() - t0 < 1200) {
+    let d = (baseY + (fetch_.yaw || 0)) - pivot.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
+    if (Math.abs(d) < 0.06) break; await wait(40);
+  }
+}
 function startPet() {
   if (petting || busy || (current && current !== actions.idle && current !== actions.pet && current !== actions.petOut)) return;
   petting = true; hint.style.opacity = 0;
@@ -680,8 +689,10 @@ addEventListener('pointerup', (e) => {
       const disp = p1.clone().sub(q0); disp.y = 0;
       const upPx = a[1] - b[1]; const lift = Math.max(0, upPx) / innerHeight;
       v.z *= 0.35; disp.z *= 0.35;
-      if (v.length() < 0.8 && disp.length() > 0.15) v.copy(disp).multiplyScalar(4.0);
-      if (v.length() > 0.5 || lift > 0.08) { v.z = THREE.MathUtils.clamp(v.z, -2.0, 2.0); flickBall(v.clampLength(0, 6.5), 1.2 + lift * 8.0); }
+      const touch = e.pointerType === 'touch';
+      if (touch) { const gestureV = disp.clone().multiplyScalar(6.0); if (gestureV.length() > v.length()) v.copy(gestureV); else v.multiplyScalar(1.4); }
+      else if (v.length() < 0.8 && disp.length() > 0.15) v.copy(disp).multiplyScalar(4.0);
+      if (v.length() > 0.5 || lift > 0.08) { v.z = THREE.MathUtils.clamp(v.z, -2.0, 2.0); flickBall(v.clampLength(0, 7.5), 1.2 + lift * 8.0); }
     } catch (err) { console.error('flick', err); }
     return;
   }
@@ -691,7 +702,7 @@ addEventListener('pointerup', (e) => {
 canvas.addEventListener('dblclick', () => { spin.y = 0; spin.x = 0; spin.vy = 0; zoom.target = 1.3; });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoom.target = THREE.MathUtils.clamp(zoom.target * (1 + Math.sign(e.deltaY) * 0.08), zoom.min, zoom.max); }, { passive: false });
 const touches = new Map();
-canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') touches.set(e.pointerId, [e.clientX, e.clientY]); });
+canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch' && !(phys.grab && phys.grab.id === e.pointerId)) touches.set(e.pointerId, [e.clientX, e.clientY]); });
 canvas.addEventListener('pointermove', (e) => {
   if (!touches.has(e.pointerId)) return; touches.set(e.pointerId, [e.clientX, e.clientY]);
   if (touches.size === 2) {
@@ -736,7 +747,7 @@ function tick() {
     if (!spin.dragging) { spin.y += spin.vy; spin.vy *= 0.92; spin.x *= 0.95; }
     const baseY = frame === 's1' ? -0.35 : frame === 's3' ? -0.5 : -0.2;
     const wantYaw = fetch_.yaw !== null ? baseY + fetch_.yaw : Math.sin(t * 0.35) * 0.06 + baseY + spin.y;
-    let dy = wantYaw - pivot.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); pivot.rotation.y += dy * (fetch_.yaw !== null ? 0.12 : 1);
+    let dy = wantYaw - pivot.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); pivot.rotation.y += dy * (fetch_.yaw !== null ? 0.18 : 1);
     pivot.rotation.x = spin.x;
     mixer.update(dt);
     if (holdJaw && jawBone) { const e = new THREE.Euler().setFromQuaternion(jawBone.quaternion, 'XYZ'); if (e.x < JAW_HOLD) { e.x = JAW_HOLD; jawBone.quaternion.setFromEuler(e); } }
