@@ -42,7 +42,7 @@ renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, isMobile ? 1.5 : 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 0.82;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
@@ -50,9 +50,9 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.45;
 
-const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(2.5, 4, 3); scene.add(key);
+const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(2.5, 4, 3); scene.add(key);
 const rim = new THREE.DirectionalLight(0xc9d6ff, 1.2); rim.position.set(-3, 2, -3); scene.add(rim);
-const fill = new THREE.HemisphereLight(0xa9b6e0, 0x1a1a30, 0.75); scene.add(fill);
+const fill = new THREE.HemisphereLight(0xa9b6e0, 0x1a1a30, 0.55); scene.add(fill);
 const under = new THREE.PointLight(0xd9f38b, 3.0, 5, 1.6); under.position.set(0, -0.55, 0.9); scene.add(under);
 
 /* ---------- star field ---------- */
@@ -150,9 +150,9 @@ function setupMaterials(root) {
     const name = m.name || '';
     if (name === 'WEB_body') {
       const pm = new THREE.MeshPhysicalMaterial({
-        map: m.map, color: 0xe9e4f6, roughness: 0.3, metalness: 0,
+        map: m.map, color: 0xd6d0e8, roughness: 0.36, metalness: 0,
         emissive: 0xffffff, emissiveMap: m.emissiveMap, emissiveIntensity: 1.0,
-        clearcoat: 0.6, clearcoatRoughness: 0.2, iridescence: 0.35, iridescenceIOR: 1.5, iridescenceThicknessRange: [150, 400],
+        clearcoat: 0.45, clearcoatRoughness: 0.25, iridescence: 0.35, iridescenceIOR: 1.5, iridescenceThicknessRange: [150, 400],
         sheen: 0.15, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xd9bfff), envMapIntensity: 0.9,
       });
       // boost the baked nebula: raise contrast and saturation of the emissive map so the violet patches read like in Blender
@@ -179,7 +179,7 @@ function setupMaterials(root) {
              float t = clamp((n1 * 0.6 + n2 * 0.4 - 0.28) / 0.46, 0.0, 1.0);
              vec3 ramp = t < 0.5 ? mix(vec3(0.30, 0.55, 1.0), vec3(0.60, 0.35, 1.0), t / 0.5) : mix(vec3(0.60, 0.35, 1.0), vec3(1.0, 0.50, 0.85), (t - 0.5) / 0.5);
              float mask = smoothstep(0.34, 0.72, n1 * 0.6 + n2 * 0.4);
-             totalEmissiveRadiance = ramp * mask * 1.1 + vec3(1.0) * spark * 1.4;
+             totalEmissiveRadiance = ramp * mask * 0.85 + vec3(1.0) * spark * 1.0;
              diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * mix(vec3(1.0), ramp, 0.8), mask);
            #endif`);
       };
