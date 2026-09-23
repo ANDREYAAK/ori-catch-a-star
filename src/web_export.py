@@ -63,7 +63,7 @@ for i,s in enumerate(web.material_slots): s.material=m_mouth if i==mi else m_bod
 iris_img=bpy.data.images.get('iris_bake'); scl_img=bpy.data.images.get('sclera_bake')
 m_iris=simple('WEB_iris',rough=0.35,tex=iris_img,emis=iris_img,emit_strength=0.5)
 m_scl=simple('WEB_sclera',rough=0.4,tex=scl_img,emis=scl_img,emit_strength=0.9)
-m_pupil=simple('WEB_pupil',color=(0.0044,0.006,0.0144,1),rough=0.3)
+m_pupil=simple('WEB_pupil',color=(0.01,0.0,0.02,1),rough=0.3)
 m_lens=simple('WEB_lens',color=(1,1,1,1),rough=0.05,alpha=0.12)
 m_lash=simple('WEB_lash',color=(0.013,0.0185,0.0369,1),rough=0.8)
 m_glint=simple('WEB_glint',color=(1,1,1,1),emis=(1,1,1,1),emit_strength=3.0)

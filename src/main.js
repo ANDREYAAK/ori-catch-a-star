@@ -202,10 +202,10 @@ function setupMaterials(root) {
     const name = (m.name || '').replace(/\.\d+$/, '');   // tolerate Blender's .001 duplicate suffixes
     if (name === 'WEB_body') {
       const pm = new THREE.MeshPhysicalMaterial({
-        map: m.map, color: 0xe8edf6, roughness: 0.36, metalness: 0,
+        map: m.map, color: 0xe4e1ee, roughness: 0.36, metalness: 0,
         emissive: 0xffffff, emissiveMap: m.emissiveMap, emissiveIntensity: 1.0,
         clearcoat: 0.45, clearcoatRoughness: 0.25, iridescence: 0.35, iridescenceIOR: 1.5, iridescenceThicknessRange: [150, 400],
-        sheen: 0.15, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xe4efff), envMapIntensity: 0.9,
+        sheen: 0.15, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xd9bfff), envMapIntensity: 0.9,
       });
       // nebula patches from the baked Blender emission, recoloured to the brand-guide greys (#5B6E96 .. #E4EFFF)
       pm.onBeforeCompile = (sh) => {
@@ -230,19 +230,19 @@ function setupMaterials(root) {
              float n2 = fbm(P * 2.6 + vec3(7.1, 3.3, uTime * 0.03));
              float pb = smoothstep(0.23, 0.50, lum + (n2 - 0.5) * 0.12);
              float mask = pb * (1.0 - spark);
-             // guide greys in linear space: #5B6E96 -> #9AA6C0 -> #E4EFFF (no violet: that is the old MTS brand colour)
+             // patch colours: violet -> pink with a blue touch on the rims (restored at the user's request)
              float t = clamp((lum - 0.30) / 0.30 + (n2 - 0.5) * 0.5, 0.0, 1.0);
-             vec3 ramp = t < 0.5 ? mix(vec3(0.105, 0.158, 0.305), vec3(0.323, 0.381, 0.527), t / 0.5) : mix(vec3(0.323, 0.381, 0.527), vec3(0.776, 0.863, 1.0), (t - 0.5) / 0.5);
+             vec3 ramp = t < 0.5 ? mix(vec3(0.42, 0.45, 1.0), vec3(0.62, 0.35, 1.0), t / 0.5) : mix(vec3(0.62, 0.35, 1.0), vec3(1.0, 0.48, 0.86), (t - 0.5) / 0.5);
              // patches replace the white albedo (so bright lights cannot wash them out) and glow a little
              diffuseColor.rgb = mix(diffuseColor.rgb, ramp * 0.85, mask * 0.95);
-             totalEmissiveRadiance = ramp * mask * 0.3 + vec3(1.0) * spark * 1.3;
+             totalEmissiveRadiance = ramp * mask * 0.6 + vec3(1.0) * spark * 1.3;
            #endif`);
       };
       pm.name = name; o.material = pm;
     } else if (name === 'WEB_lid') {
       // eyelid shutters: same pale crystal surface as the body, but no baked atlas (the lids have no UVs)
-      o.material = new THREE.MeshPhysicalMaterial({ color: 0xe8edf6, roughness: 0.34, metalness: 0,
-        clearcoat: 0.45, clearcoatRoughness: 0.25, sheen: 0.2, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xe4efff), envMapIntensity: 0.9 });
+      o.material = new THREE.MeshPhysicalMaterial({ color: 0xe8e4f2, roughness: 0.34, metalness: 0,
+        clearcoat: 0.45, clearcoatRoughness: 0.25, sheen: 0.2, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xd9bfff), envMapIntensity: 0.9 });
       o.material.name = name; o.renderOrder = 2;
     } else if (name === 'WEB_mouth') {
       o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0 });
