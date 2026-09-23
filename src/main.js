@@ -32,6 +32,8 @@ const SIT_AFTER = 3;
 // panting: an ADDITIVE loop (jaw, tongue, chest, head) laid over idle or sit now and then.
 // ref is a rest frame used as the zero pose for the additive clip.
 const PANT = { a: 1170, b: 1194, ref: 1168 };
+// catching a star in the game: chomp + lick over the nose, additive over the run
+const CATCHLICK = { a: 1200, b: 1215, ref: 1198 };
 const JAW_HOLD = 0.34;
 
 /* ---------- DOM ---------- */
@@ -314,16 +316,19 @@ async function loadModel() {
       mixer = new THREE.AnimationMixer(ori);
       const clip = gltf.animations[0];
       for (const k in CLIPS) actions[k] = makeAction(clip, k);
-      {
-        const keep = /^(jaw|tongue[123]|chest|spine|head)\./;
-        const sub = THREE.AnimationUtils.subclip(clip, 'pant', PANT.a, PANT.b, FPS);
+      // additive overlays: only the listed bones, relative to a rest frame (rng.ref)
+      const additive = (name, rng, keep) => {
+        const sub = THREE.AnimationUtils.subclip(clip, name, rng.a, rng.b, FPS);
         sub.tracks = sub.tracks.filter((t) => keep.test(t.name));
-        const ref = THREE.AnimationUtils.subclip(clip, 'pantRef', PANT.ref, PANT.ref + 1, FPS);
+        const ref = THREE.AnimationUtils.subclip(clip, name + 'Ref', rng.ref, rng.ref + 1, FPS);
         ref.tracks = ref.tracks.filter((t) => keep.test(t.name));
         THREE.AnimationUtils.makeClipAdditive(sub, 0, ref, FPS);
-        pant.action = mixer.clipAction(sub, undefined, THREE.AdditiveAnimationBlendMode);
-        pant.action.setLoop(THREE.LoopRepeat, Infinity); pant.action.setEffectiveWeight(0); pant.action.play();
-      }
+        return mixer.clipAction(sub, undefined, THREE.AdditiveAnimationBlendMode);
+      };
+      pant.action = additive('pant', PANT, /^(jaw|tongue[123]|chest|spine|head)\./);
+      pant.action.setLoop(THREE.LoopRepeat, Infinity); pant.action.setEffectiveWeight(0); pant.action.play();
+      catchLick.action = additive('catchLick', CATCHLICK, /^(jaw|tongue[123]|head)\./);
+      catchLick.action.setLoop(THREE.LoopOnce, 1); catchLick.action.clampWhenFinished = false;
       resolve();
     }, reject);
   });
@@ -510,9 +515,9 @@ function ndcToPlane(nx, ny, z = 0) {
 function screenX2world(sx, z = 0) { return ndcToPlane(sx / innerWidth * 2 - 1, 0, z).x; }
 function toScreen(v) { const p = v.clone().project(camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }
 const STAR_Z = 0.4;
-const MAGNET = 0.2, CATCH_R = 0.2;   // world units; the play area is about +/-1.0 wide on a phone
+const MAGNET = 0.12, CATCH_R = 0.17;   // world units; the play area is about +/-1.0 wide on a phone
 // meteors: a hit knocks one lit star out of the constellation. Warned by a red ring on the floor.
-const METEOR = { from: 4, series: 5, seriesLen: 3, fall: 0.95, hitHalfW: 0.28, stun: 0.45, invuln: 1.1, rush: 3 };
+const METEOR = { from: 2.5, series: 6, seriesLen: 3, fall: 0.8, hitHalfW: 0.33, stun: 0.45, invuln: 1.1, rush: 3 };
 const meteorTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
   const g = x.createRadialGradient(64, 60, 8, 64, 64, 60);
@@ -603,9 +608,9 @@ function spawnStar() {
   const sp = makeGameStar(kind);
   // stars appear away from where Ori stands, so catching them takes a run
   let x = 0, dogX = pivot ? pivot.position.x : 0;
-  for (let k = 0; k < 8; k++) { x = (Math.random() * 2 - 1) * xm; if (Math.abs(x - dogX) > 0.42) break; }
+  for (let k = 0; k < 8; k++) { x = (Math.random() * 2 - 1) * xm; if (Math.abs(x - dogX) > 0.55) break; }
   sp.position.set(x, top.y, STAR_Z);
-  const ramp = 1 + 0.45 * game.t / game.dur;
+  const ramp = 1.15 + 0.5 * game.t / game.dur;
   sp.userData = { kind, v: new THREE.Vector3((Math.random() - 0.5) * 0.3, -(blue ? 1.75 + Math.random() * 0.35 : 1.0 + Math.random() * 0.45) * ramp, 0), spin: (Math.random() - 0.5) * 3 };
 }
 function spawnComet() {
@@ -624,7 +629,8 @@ function catchGameStar(i) {
   const s = game.stars[i], kind = s.userData.kind, m = mouthWorld();
   for (let k = 0; k < 10; k++) { const a = Math.random() * Math.PI * 2, r = 1 + Math.random() * 1.2; const f = spawnFaller(m.x, m.y, m.z + 0.1, new THREE.Vector3(Math.cos(a) * r, 0.4 + Math.random() * 1.2, 0), 0.05 + Math.random() * 0.05, 0.5); f.material.color.set(kind === 'blue' ? 0x9fc8ff : kind === 'comet' ? 0xd9f38b : 0xffffff); }
   removeGameStar(i, false);
-  game.snap = 0.24; game.caught++;
+  if (catchLick.action) catchLick.action.reset().setEffectiveWeight(1).play(); else game.snap = 0.24;
+  game.wag = 0.7; game.caught++;
   game.combo++; game.bestCombo = Math.max(game.bestCombo, game.combo);
   const mult = game.x2 ? 2 : 1;
   if (game.x2 && --game.x2left <= 0) { setX2(false); game.combo = 0; }   // the bonus lasts a few stars, then a new series starts
@@ -732,7 +738,7 @@ function gameStep(dt) {
   const g = game;
   const xm = Math.abs(ndcToPlane(0.78, -0.3, 0).x);
   const tx = THREE.MathUtils.clamp(g.targetX, -xm, xm), dx = tx - pivot.position.x;
-  if (g.stun > 0) g.stun -= dt; if (g.invuln > 0) g.invuln -= dt;
+  if (g.stun > 0) g.stun -= dt; if (g.invuln > 0) g.invuln -= dt; if (g.wag > 0) g.wag -= dt;
   const moving = Math.abs(dx) > 0.05 && !g.leap && !g.lockAnim && !(g.stun > 0);
   if (moving) pivot.position.x += Math.sign(dx) * Math.min(Math.abs(dx), RUN_SPEED * 1.15 * dt);
   if (!g.lockAnim) {
@@ -766,10 +772,10 @@ function gameStep(dt) {
     g.meteorIn -= dt;
     if (g.meteorIn <= 0) {
       const late = g.t > 15;
-      spawnMeteor(Math.random() < 0.6);
-      if (late && Math.random() < 0.3) spawnMeteor(false);
+      spawnMeteor(Math.random() < 0.7);
+      if (Math.random() < (late ? 0.45 : 0.15)) spawnMeteor(false);
       if (g.t < METEOR.from + 0.1) gSay('Метеориты! Уворачивайтесь', 1600);
-      g.meteorIn = late ? 1.4 + Math.random() * 0.5 : 2.3 + Math.random() * 0.6;
+      g.meteorIn = late ? 1.0 + Math.random() * 0.4 : 1.7 + Math.random() * 0.5;
     }
   }
   const mh = mouthWorld();
@@ -792,7 +798,7 @@ function gameStep(dt) {
     if (u.kind !== 'comet' && Math.abs(ddx) < MAGNET && ddy > -0.15 && ddy < 0.7) s.position.x += ddx * Math.min(1, 4 * dt);   // soft magnet: forgives a near miss, not a far one
     if (u.kind === 'comet' && g.leap && Math.hypot(ddx, ddy) < 0.85) { s.position.x += ddx * Math.min(1, 9 * dt); s.position.y -= ddy * Math.min(1, 9 * dt); }
     const hit = u.kind === 'comet' ? Math.hypot(ddx, ddy) < 0.3 : Math.abs(ddx) < CATCH_R && Math.abs(ddy) < 0.2;
-    if (hit) { catchGameStar(i); continue; }
+    if (hit) { catchGameStar(i); if (!g.playing) return; continue; }   // the last catch starts the finale, which clears the stars
     if (u.kind !== 'comet' && s.position.y < g.baseY + 0.03) { removeGameStar(i, true); continue; }
     if (u.kind === 'comet' && Math.abs(s.position.x) > xm * 1.6) { removeGameStar(i, false); continue; }
     if (s.position.y > m.y - 0.1 && s.position.y < lookY) { lookY = s.position.y; look = s; }
@@ -1083,6 +1089,7 @@ function stopPet() {
 
 /* ---------- panting now and then ---------- */
 const pant = { action: null, w: 0, on: false, t: 0, next: 4 };
+const catchLick = { action: null };
 function updatePant(dt) {
   if (!pant.action) return;
   const allowed = !busy && !game.on && !fetch_.mode && !petting && !holdJaw && (current === actions.idle || current === actions.sit);
@@ -1286,7 +1293,7 @@ function tick(_ts, simDt) {
     if (game.on) gamePose(dt);
     if (holdJaw && jawBone) { const e = new THREE.Euler().setFromQuaternion(jawBone.quaternion, 'XYZ'); if (e.x < JAW_HOLD) { e.x = JAW_HOLD; jawBone.quaternion.setFromEuler(e); } }
     // tail wag on top of the clips
-    const wagAmp = THREE.MathUtils.degToRad(petting ? tail.amp * 2.2 : sit.state === 'sitting' ? tail.amp * 0.3 : tail.amp), wagT = t * (petting ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
+    const wagAmp = THREE.MathUtils.degToRad(petting || (game.on && game.wag > 0) ? tail.amp * 2.2 : sit.state === 'sitting' ? tail.amp * 0.3 : tail.amp), wagT = t * (petting ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
     for (let i = 0; i < 5; i++) {
       const b = tail.bones[i]; if (!b) continue;
       const z = wagAmp * tail.gains[i] * Math.sin(wagT - tail.lags[i]);
