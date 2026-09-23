@@ -23,7 +23,12 @@ const CLIPS = {
   catchTwo:   { a: 880, b: 960 },
   pickup:     { a: 970, b: 1004 },
   drop:       { a: 1010, b: 1040 },
+  sitDown:    { a: 1070, b: 1092 },
+  sit:        { a: 1092, b: 1140, loop: true },
+  sitUp:      { a: 1140, b: 1158 },
 };
+// after this many seconds without any input the dog sits down and stays seated until the next touch
+const SIT_AFTER = 3;
 const JAW_HOLD = 0.34;
 
 /* ---------- DOM ---------- */
@@ -564,6 +569,7 @@ function catchGameStar(i) {
 }
 
 async function startGame() {
+  if (sit.state !== 'stand') { wake(startGame); return; }
   if (busy || game.on) return;
   if (!pivot) return;
   busy = true; petting = false; holdJaw = false; parkBall(); train.classList.remove('show'); hint.style.opacity = 0;
@@ -773,6 +779,7 @@ function floorPoint(cx, cy) {
   hit.z = THREE.MathUtils.clamp(hit.z, -1.6, 1.3); hit.y = pivot ? pivot.position.y : 0; return hit;
 }
 function armThrow() {
+  if (sit.state !== 'stand') { wake(armThrow); return; }
   if (busy) return;
   fetch_.mode = !fetch_.mode; syncThrowBtns();
   hint.style.opacity = 0;
@@ -975,8 +982,41 @@ function stopPet() {
   play('petOut', { fade: 0.2, onDone: () => play('idle', { fade: 0.4 }) });
 }
 
+/* ---------- sit when left alone ---------- */
+const sit = { state: 'stand', idle: 0, pending: null };
+function sitReady() {
+  return !busy && !game.on && !fetch_.mode && !petting && !phys.on && !phys.grab && !pointer.down && current === actions.idle;
+}
+function updateSit(dt) {
+  if (sit.state !== 'stand') return;
+  if (!sitReady()) { sit.idle = 0; return; }
+  sit.idle += dt;
+  if (sit.idle >= SIT_AFTER) {
+    sit.state = 'down';
+    play('sitDown', { fade: 0.35, onDone: () => { if (sit.state === 'down' && current === actions.sitDown) { sit.state = 'sitting'; play('sit', { fade: 0.2 }); } } });
+  }
+}
+// any input: stand up first (if seated), then run `then`. Returns true when the dog is already standing.
+function wake(then) {
+  sit.idle = 0;
+  if (sit.state === 'stand') { if (then) then(); return true; }
+  if (then) sit.pending = then;
+  if (sit.state === 'up') return false;
+  const done = () => {
+    sit.state = 'stand'; sit.idle = 0;
+    if (current === actions.sitUp || current === actions.sitDown) play('idle', { fade: 0.3 });
+    const p = sit.pending; sit.pending = null; if (p) p();
+  };
+  // barely started sitting: just settle back instead of playing the whole stand-up
+  if (sit.state === 'down' && actions.sitDown.time < (CLIPS.sitDown.b - CLIPS.sitDown.a) / FPS * 0.4) { sit.state = 'up'; play('idle', { fade: 0.35 }); setTimeout(done, 300); return false; }
+  sit.state = 'up';
+  play('sitUp', { fade: 0.2, onDone: done });
+  return false;
+}
+
 /* ---------- commands (training demo) ---------- */
 function command(name) {
+  if (sit.state !== 'stand' && name !== 'reset' && name !== 'showcard') { wake(() => command(name)); return; }
   if (busy) return;
   if (name === 'reset') { store.clear(); location.reload(); return; }
   if (name === 'showcard') { screens.s3.classList.remove('hidecard'); $('#showCard').style.display = 'none'; setFrame('s3'); train.classList.remove('show'); return; }
@@ -1001,6 +1041,10 @@ train.addEventListener('click', (e) => { const b = e.target.closest('button'); i
 document.querySelectorAll('.cmds').forEach((row) => row.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) command(b.dataset.cmd); }));
 
 let pointer = { x: -1, y: -1, down: false };
+addEventListener('pointerdown', () => wake(), true);
+addEventListener('keydown', () => wake(), true);
+addEventListener('wheel', () => wake(), { capture: true, passive: true });
+addEventListener('pointermove', () => { if (sit.state === 'stand') sit.idle = 0; }, true);
 addEventListener('pointermove', (e) => {
   if (game.on) {
     if (game.drag && game.drag.id === e.pointerId) {
@@ -1131,7 +1175,7 @@ function tick() {
     if (game.on) gamePose(dt);
     if (holdJaw && jawBone) { const e = new THREE.Euler().setFromQuaternion(jawBone.quaternion, 'XYZ'); if (e.x < JAW_HOLD) { e.x = JAW_HOLD; jawBone.quaternion.setFromEuler(e); } }
     // tail wag on top of the clips
-    const wagAmp = THREE.MathUtils.degToRad(petting ? tail.amp * 2.2 : tail.amp), wagT = t * (petting ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
+    const wagAmp = THREE.MathUtils.degToRad(petting ? tail.amp * 2.2 : sit.state === 'sitting' ? tail.amp * 0.6 : tail.amp), wagT = t * (petting ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
     for (let i = 0; i < 5; i++) {
       const b = tail.bones[i]; if (!b) continue;
       const z = wagAmp * tail.gains[i] * Math.sin(wagT - tail.lags[i]);
@@ -1149,7 +1193,7 @@ function tick() {
       life('ear1L', ear, 0, 0); life('ear1R', ear, 0, 0); life('ear2L', ear * 1.4, 0, 0); life('ear2R', ear * 1.4, 0, 0);
     }
     ori.traverse((o) => { if (o.isMesh && o.material.userData.uni) o.material.userData.uni.uTime.value = t; });
-    updateEyes(dt); updateBlink(dt);
+    updateEyes(dt); updateBlink(dt); updateSit(dt);
     // touching the dog only rotates it: the pet reaction fired on every touch and read as a twitch,
     // so it is off (startPet/stopPet stay available for the command menu)
     if (petting) stopPet();
@@ -1177,6 +1221,6 @@ function tick() {
     phraseToday = saved.phrase; $('#phrase').textContent = saved.phrase; applyShine(saved.shine); showScreen('s3'); setFrame('s3');
   }
   play('idle');
-  window.__ori = { game, tick, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
+  window.__ori = { game, tick, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
   tick();
 })();
