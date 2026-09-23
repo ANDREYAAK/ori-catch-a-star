@@ -63,12 +63,12 @@ for i,s in enumerate(web.material_slots): s.material=m_mouth if i==mi else m_bod
 iris_img=bpy.data.images.get('iris_bake'); scl_img=bpy.data.images.get('sclera_bake')
 m_iris=simple('WEB_iris',rough=0.35,tex=iris_img,emis=iris_img,emit_strength=0.5)
 m_scl=simple('WEB_sclera',rough=0.4,tex=scl_img,emis=scl_img,emit_strength=0.9)
-m_pupil=simple('WEB_pupil',color=(0.01,0.0,0.02,1),rough=0.3)
+m_pupil=simple('WEB_pupil',color=(0.0044,0.006,0.0144,1),rough=0.3)
 m_lens=simple('WEB_lens',color=(1,1,1,1),rough=0.05,alpha=0.12)
-m_lash=simple('WEB_lash',color=(0.05,0.02,0.11,1),rough=0.8)
+m_lash=simple('WEB_lash',color=(0.013,0.0185,0.0369,1),rough=0.8)
 m_glint=simple('WEB_glint',color=(1,1,1,1),emis=(1,1,1,1),emit_strength=3.0)
 m_lid=simple('WEB_lid',color=(0.90,0.90,0.94,1),rough=0.36)
-m_nose=simple('WEB_nose',color=(0.13,0.05,0.32,1),rough=0.3)
+m_nose=simple('WEB_nose',color=(0.0296,0.0437,0.0953,1),rough=0.28)
 m_teeth=simple('WEB_teeth',color=(0.95,0.95,0.97,1),rough=0.25)
 m_tongue=simple('WEB_tongue',color=(0.85,0.32,0.45,1),rough=0.35)
 parts={'IRIS_L':m_iris,'IRIS_R':m_iris,'SCLERA_L':m_scl,'SCLERA_R':m_scl,'PUPIL_L':m_pupil,'PUPIL_R':m_pupil,'LENS_L':m_lens,'LENS_R':m_lens,
@@ -79,7 +79,7 @@ for n,m in parts.items():
     for s in o.material_slots: s.material=m
     if not o.material_slots: o.data.materials.append(m)
 # ---------- 3b. ink curves (brows, mouth line, philtrum) -> meshes ----------
-m_ink=simple('WEB_ink',color=(0.05,0.02,0.11,1),rough=0.8)
+m_ink=simple('WEB_ink',color=(0.013,0.0185,0.0369,1),rough=0.8)
 ink_objs=[]
 for n in ('BROW_L','BROW_R','MOUTH_line','PHILTRUM_line')+tuple(f'LASH_{sd}_{k}' for sd in 'LR' for k in ('up0','up1','up2','up3','lo0','lo1')):
     src=bpy.data.objects[n]; c=src.copy(); c.data=src.data.copy(); c.name='INK_'+n; sc.collection.objects.link(c)
