@@ -23,9 +23,9 @@ const CLIPS = {
   catchTwo:   { a: 880, b: 960 },
   pickup:     { a: 970, b: 1004 },
   drop:       { a: 1010, b: 1040 },
-  sitDown:    { a: 1070, b: 1092 },
-  sit:        { a: 1092, b: 1140, loop: true },
-  sitUp:      { a: 1140, b: 1158 },
+  sitDown:    { a: 1070, b: 1098 },
+  sit:        { a: 1098, b: 1146, loop: true },
+  sitUp:      { a: 1146, b: 1166 },
 };
 // after this many seconds without any input the dog sits down and stays seated until the next touch
 const SIT_AFTER = 3;
@@ -1175,7 +1175,7 @@ function tick() {
     if (game.on) gamePose(dt);
     if (holdJaw && jawBone) { const e = new THREE.Euler().setFromQuaternion(jawBone.quaternion, 'XYZ'); if (e.x < JAW_HOLD) { e.x = JAW_HOLD; jawBone.quaternion.setFromEuler(e); } }
     // tail wag on top of the clips
-    const wagAmp = THREE.MathUtils.degToRad(petting ? tail.amp * 2.2 : sit.state === 'sitting' ? tail.amp * 0.6 : tail.amp), wagT = t * (petting ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
+    const wagAmp = THREE.MathUtils.degToRad(petting ? tail.amp * 2.2 : sit.state === 'sitting' ? tail.amp * 0.3 : tail.amp), wagT = t * (petting ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
     for (let i = 0; i < 5; i++) {
       const b = tail.bones[i]; if (!b) continue;
       const z = wagAmp * tail.gains[i] * Math.sin(wagT - tail.lags[i]);
