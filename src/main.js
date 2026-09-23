@@ -500,7 +500,7 @@ function constellationOfDay() {
   let h = 0; for (const c of TODAY) h = (h * 31 + c.charCodeAt(0)) % 9973;
   return CONSTELLATIONS[h % CONSTELLATIONS.length];
 }
-const gEl = $('#game'), gSky = $('#gSky'), gBar = $('#gBar'), gHint = $('#gHint'), gName = $('#gName');
+const gEl = $('#game'), gSky = $('#gSky'), gBar = $('#gBar'), gHint = $('#gHint'), gName = $('#gName'), gX2 = $('#gX2');
 const game = { on: false };
 const _gRay = new THREE.Raycaster(), _gPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), _gNdc = new THREE.Vector2();
 function ndcToPlane(nx, ny, z = 0) {
@@ -511,6 +511,16 @@ function screenX2world(sx, z = 0) { return ndcToPlane(sx / innerWidth * 2 - 1, 0
 function toScreen(v) { const p = v.clone().project(camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }
 const STAR_Z = 0.4;
 const MAGNET = 0.2, CATCH_R = 0.2;   // world units; the play area is about +/-1.0 wide on a phone
+// meteors: a hit knocks one lit star out of the constellation. Warned by a red ring on the floor.
+const METEOR = { from: 4, series: 5, seriesLen: 3, fall: 0.95, hitHalfW: 0.28, stun: 0.45, invuln: 1.1, rush: 3 };
+const meteorTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+  const g = x.createRadialGradient(64, 60, 8, 64, 64, 60);
+  g.addColorStop(0, '#46527a'); g.addColorStop(0.62, '#303B57'); g.addColorStop(0.8, '#FF0032'); g.addColorStop(1, 'rgba(255,0,50,0)');
+  x.fillStyle = g; x.beginPath(); x.arc(64, 64, 60, 0, Math.PI * 2); x.fill();
+  x.fillStyle = 'rgba(20,26,44,.55)'; for (const [cx, cy, r] of [[48, 50, 9], [78, 70, 7], [60, 82, 5]]) { x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
 
 function buildSky(shape) {
   const ns = 'http://www.w3.org/2000/svg'; gSky.innerHTML = '';
@@ -523,18 +533,58 @@ function buildSky(shape) {
     const c = document.createElementNS(ns, 'circle'); c.setAttribute('class', 'pt'); c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 1.7);
     gSky.appendChild(c); return c;
   });
-  game.litSet = new Set();
+  game.litSet = new Set(); game.shown = new Set();
 }
-function lightPoint(i) {
-  game.litSet.add(i); game.ptEls[i].classList.add('lit'); game.ptEls[i].setAttribute('r', 2.2);
-  for (const l of game.lineEls) if (game.litSet.has(l.a) && game.litSet.has(l.b)) l.el.classList.add('lit');
+// the constellation is filled in UNITS: every point takes two stars (half-lit after the first one)
+function refreshSky() {
+  const full = new Set();
+  game.ptEls.forEach((el, p) => {
+    const c = (game.shown.has(2 * p) ? 1 : 0) + (game.shown.has(2 * p + 1) ? 1 : 0);
+    el.classList.toggle('lit', c === 2); el.classList.toggle('half', c === 1); el.setAttribute('r', c === 2 ? 2.2 : c === 1 ? 1.95 : 1.7);
+    if (c === 2) full.add(p);
+  });
+  game.litSet = full;
+  for (const l of game.lineEls) l.el.classList.toggle('lit', full.has(l.a) && full.has(l.b));
 }
+function lightUnit(idx) { game.shown.add(idx); refreshSky(); }
 function flyToSky(from, idx) {
   const el = document.createElement('div'); el.className = 'g-fly'; el.style.left = from.x + 'px'; el.style.top = from.y + 'px';
   document.body.appendChild(el);
-  const r = game.ptEls[idx].getBoundingClientRect();
+  const r = game.ptEls[idx >> 1].getBoundingClientRect();
   setTimeout(() => { el.style.transform = `translate(${r.left + r.width / 2 - from.x}px, ${r.top + r.height / 2 - from.y}px) scale(.45)`; }, 20);
-  setTimeout(() => { el.remove(); lightPoint(idx); }, 640);
+  setTimeout(() => { el.remove(); if (game.on && idx < game.lit) lightUnit(idx); }, 640);
+}
+function unlightUnit(idx) {
+  game.shown.delete(idx); refreshSky();
+  const el = game.ptEls[idx >> 1]; el.classList.remove('lost'); void el.getBBox(); el.classList.add('lost');
+}
+function setX2(on) { game.x2 = on; gX2.classList.toggle('on', on); }
+function spawnMeteor(aim) {
+  const g = game, xm = Math.abs(ndcToPlane(0.7, 0, STAR_Z).x), top = ndcToPlane(0, 1.08, STAR_Z);
+  let x = aim ? pivot.position.x + (Math.random() - 0.5) * 0.3 : (Math.random() * 2 - 1) * xm;
+  x = THREE.MathUtils.clamp(x, -xm, xm);
+  const land = g.baseY + 0.08;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: meteorTex, transparent: true, depthWrite: false }));
+  sp.scale.setScalar(0.3); sp.position.set(x, top.y, STAR_Z); scene.add(sp);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.14, 0.2, 40), new THREE.MeshBasicMaterial({ color: 0xff0032, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.set(x, g.baseY + 0.012, STAR_Z * 0.5); scene.add(ring);
+  g.meteors.push({ sp, ring, t: 0, land, vy: (top.y - land) / METEOR.fall, spin: (Math.random() - 0.5) * 4 });
+}
+function removeMeteor(i) {
+  const mt = game.meteors[i]; scene.remove(mt.sp); mt.sp.material.dispose(); scene.remove(mt.ring); mt.ring.geometry.dispose(); mt.ring.material.dispose();
+  game.meteors.splice(i, 1);
+}
+function meteorBurst(p, n, hit) {
+  for (let k = 0; k < n; k++) { const a = Math.random() * Math.PI, r = 0.5 + Math.random() * (hit ? 1.4 : 0.8);
+    const f = spawnFaller(p.x, p.y, p.z, new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r * 0.8, 0), 0.05 + Math.random() * 0.05, 0.5);
+    f.material.color.set(Math.random() < (hit ? 0.6 : 0.3) ? 0xff0032 : 0x8a93ad); }
+}
+function meteorHit(i) {
+  const g = game, p = g.meteors[i].sp.position.clone(); removeMeteor(i); meteorBurst(p, 14, true);
+  g.hits++; g.combo = 0; setX2(false); g.stun = METEOR.stun; g.invuln = METEOR.invuln;
+  try { navigator.vibrate && navigator.vibrate(80); } catch {}
+  if (g.lit > 0) { const idx = --g.lit; unlightUnit(idx); gSay('Метеорит сбил звезду!', 1300); }
+  else gSay('Осторожно, метеориты!', 1300);
 }
 function gSay(text, ms) {
   gHint.textContent = text;
@@ -575,8 +625,12 @@ function catchGameStar(i) {
   for (let k = 0; k < 10; k++) { const a = Math.random() * Math.PI * 2, r = 1 + Math.random() * 1.2; const f = spawnFaller(m.x, m.y, m.z + 0.1, new THREE.Vector3(Math.cos(a) * r, 0.4 + Math.random() * 1.2, 0), 0.05 + Math.random() * 0.05, 0.5); f.material.color.set(kind === 'blue' ? 0x9fc8ff : kind === 'comet' ? 0xd9f38b : 0xffffff); }
   removeGameStar(i, false);
   game.snap = 0.24; game.caught++;
+  game.combo++; game.bestCombo = Math.max(game.bestCombo, game.combo);
+  const mult = game.x2 ? 2 : 1;
+  if (game.x2 && --game.x2left <= 0) { setX2(false); game.combo = 0; }   // the bonus lasts a few stars, then a new series starts
+  else if (!game.x2 && game.combo >= METEOR.series) { setX2(true); game.x2left = METEOR.seriesLen; gSay('Серия ×2!', 1400); }
   if (kind === 'comet') { game.cometCaught++; gSay('Поймал комету!', 1600); }
-  const n = kind === 'white' ? 1 : 2, from = toScreen(m);
+  const n = (kind === 'white' ? 1 : 2) * mult, from = toScreen(m);
   for (let k = 0; k < n && game.lit < game.need; k++) { const idx = game.lit++; setTimeout(() => flyToSky(from, idx), k * 120); }
   if (game.lit >= game.need) startFinale();
 }
@@ -587,7 +641,9 @@ async function startGame() {
   if (!pivot) return;
   busy = true; petting = false; holdJaw = false; parkBall(); train.classList.remove('show'); hint.style.opacity = 0;
   const shape = constellationOfDay();
-  Object.assign(game, { on: true, t: 0, dur: 22, stars: [], lit: 0, need: shape.pts.length, caught: 0, cometCaught: 0, comets: 0,
+  Object.assign(game, { meteors: [], meteorIn: METEOR.from, combo: 0, bestCombo: 0, x2: false, stun: 0, invuln: 0, hits: 0, dodged: 0, rush: false });
+  setX2(false);
+  Object.assign(game, { on: true, t: 0, dur: 25, stars: [], lit: 0, need: shape.pts.length * 2, caught: 0, cometCaught: 0, comets: 0,
     spawnIn: 1.2, cometIn: 6.5, snap: 0, leap: null, anim: '', finale: false, lockAnim: false, helped: false, targetX: 0,
     baseY: FRAMES.game.model[1], mouthY0: 0, drag: null, tapped: null, tapWindow: false, playing: false, hero: null, heroPhase: null, shape });
   buildSky(shape); gName.textContent = shape.name; gBar.style.transform = 'scaleX(1)';
@@ -604,13 +660,16 @@ async function startGame() {
 async function startFinale() {
   const g = game; if (g.finale) return; g.finale = true; g.playing = false;
   for (let i = g.stars.length - 1; i >= 0; i--) removeGameStar(i, true);
+  for (let i = g.meteors.length - 1; i >= 0; i--) { meteorBurst(g.meteors[i].sp.position, 5, false); removeMeteor(i); }
+  setX2(false); g.stun = 0;
   gBar.style.transform = 'scaleX(0)';
   if (g.lit < g.need) {
     g.helped = true; gSay('Ори помогает дособрать созвездие');
-    while (g.lit < g.need) { const idx = g.lit++; flyToSky(toScreen(mouthWorld()), idx); await wait(170); }
+    while (g.lit < g.need) { const idx = g.lit++; flyToSky(toScreen(mouthWorld()), idx); await wait(90); }
   }
   await wait(800);
   gEl.classList.add('done'); gSay('Созвездие собрано!');
+  if (!g.helped || g.caught > 0) { await wait(900); gSay(`Звёзд: ${g.caught} · метеоритов мимо: ${g.dodged} · лучшая серия: ${g.bestCombo}`); await wait(1500); }
   g.targetX = 0;
   const t0 = performance.now(); while (Math.abs(pivot.position.x) > 0.05 && performance.now() - t0 < 1800) await wait(40);
   await wait(300);
@@ -662,6 +721,8 @@ function applyShine(shine) {
 }
 function endGame() {
   for (let i = game.stars.length - 1; i >= 0; i--) removeGameStar(i, false);
+  for (let i = (game.meteors || []).length - 1; i >= 0; i--) removeMeteor(i);
+  setX2(false);
   game.on = false; game.playing = false;
   gEl.classList.remove('show'); document.body.classList.remove('night', 'gaming'); zoom.target = 1.3; gHint.textContent = '';
 }
@@ -671,7 +732,8 @@ function gameStep(dt) {
   const g = game;
   const xm = Math.abs(ndcToPlane(0.78, -0.3, 0).x);
   const tx = THREE.MathUtils.clamp(g.targetX, -xm, xm), dx = tx - pivot.position.x;
-  const moving = Math.abs(dx) > 0.05 && !g.leap && !g.lockAnim;
+  if (g.stun > 0) g.stun -= dt; if (g.invuln > 0) g.invuln -= dt;
+  const moving = Math.abs(dx) > 0.05 && !g.leap && !g.lockAnim && !(g.stun > 0);
   if (moving) pivot.position.x += Math.sign(dx) * Math.min(Math.abs(dx), RUN_SPEED * 1.15 * dt);
   if (!g.lockAnim) {
     const want = g.leap ? 'leap' : moving ? 'run' : 'idle';
@@ -696,8 +758,31 @@ function gameStep(dt) {
   }
   if (!g.playing) return;
   g.t += dt; gBar.style.transform = `scaleX(${Math.max(0, 1 - g.t / g.dur)})`;
-  g.spawnIn -= dt; if (g.spawnIn <= 0) { spawnStar(); g.spawnIn = THREE.MathUtils.lerp(1.0, 0.6, g.t / g.dur); }
-  g.cometIn -= dt; if (g.cometIn <= 0 && g.comets < 2) { spawnComet(); g.comets++; g.cometIn = 7 + Math.random() * 2; }
+  const rush = g.t >= g.dur - METEOR.rush;
+  if (rush && !g.rush) { g.rush = true; gSay('Звездопад!', 1500); }
+  g.spawnIn -= dt; if (g.spawnIn <= 0) { spawnStar(); g.spawnIn = rush ? 0.2 : THREE.MathUtils.lerp(1.25, 0.8, g.t / g.dur); }
+  g.cometIn -= dt; if (g.cometIn <= 0 && g.comets < 2 && !rush) { spawnComet(); g.comets++; g.cometIn = 7 + Math.random() * 2; }
+  if (g.t >= METEOR.from && !rush) {
+    g.meteorIn -= dt;
+    if (g.meteorIn <= 0) {
+      const late = g.t > 15;
+      spawnMeteor(Math.random() < 0.6);
+      if (late && Math.random() < 0.3) spawnMeteor(false);
+      if (g.t < METEOR.from + 0.1) gSay('Метеориты! Уворачивайтесь', 1600);
+      g.meteorIn = late ? 1.4 + Math.random() * 0.5 : 2.3 + Math.random() * 0.6;
+    }
+  }
+  const mh = mouthWorld();
+  for (let i = g.meteors.length - 1; i >= 0; i--) {
+    const mt = g.meteors[i]; mt.t += dt;
+    mt.sp.position.y -= mt.vy * dt; mt.sp.material.rotation += mt.spin * dt;
+    const u = Math.min(1, mt.t / METEOR.fall);
+    mt.ring.material.opacity = 0.25 + 0.6 * u; mt.ring.scale.setScalar(1.8 - 0.8 * u);
+    if (Math.random() < 0.7) { const f = spawnFaller(mt.sp.position.x, mt.sp.position.y + 0.08, mt.sp.position.z, new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.6, 0), 0.04 + Math.random() * 0.04, 0.35); f.material.color.set(Math.random() < 0.5 ? 0xff0032 : 0x5a6488); }
+    const y = mt.sp.position.y;
+    if (!(g.invuln > 0) && Math.abs(mt.sp.position.x - pivot.position.x) < METEOR.hitHalfW && y < mh.y + 0.22 && y > pivot.position.y + 0.1) { meteorHit(i); continue; }
+    if (y <= mt.land) { meteorBurst(mt.sp.position, 8, false); g.dodged++; removeMeteor(i); }
+  }
   const m = mouthWorld(); let look = null, lookY = 1e9;
   for (let i = g.stars.length - 1; i >= 0; i--) {
     const s = g.stars[i], u = s.userData;
@@ -716,8 +801,9 @@ function gameStep(dt) {
   if (g.t >= g.dur) startFinale();
 }
 // per frame, after the mixer: a quick mouth snap when a star is caught
-const _gq = new THREE.Quaternion(), _gx = new THREE.Vector3(1, 0, 0);
+const _gq = new THREE.Quaternion(), _gx = new THREE.Vector3(1, 0, 0), _gy = new THREE.Vector3(0, 1, 0);
 function gamePose(dt) {
+  if (game.stun > 0 && headBone) { const k = game.stun / METEOR.stun; _gq.setFromAxisAngle(_gy, 0.28 * k * Math.sin(game.stun * 40)); procApply(headBone, _gq); }
   if (game.snap > 0 && jawBone && headBone) {
     const k = Math.sin(Math.PI * (1 - game.snap / 0.24));
     _gq.setFromAxisAngle(_gx, 0.45 * k); procApply(jawBone, _gq);
@@ -1167,8 +1253,8 @@ function resize() {
 addEventListener('resize', resize); resize();
 
 /* ---------- loop ---------- */
-function tick() {
-  const dt = Math.min(clock.getDelta(), 0.05);
+function tick(_ts, simDt) {
+  const dt = simDt !== undefined ? simDt : Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
   starsFar.material.uniforms.uTime.value = t; starsNear.material.uniforms.uTime.value = t;
   starsFar.rotation.z = t * 0.004; starsNear.rotation.z = -t * 0.006;
@@ -1233,6 +1319,7 @@ function tick() {
     if (s.userData.streak) { const L = s.userData.v.length(); s.material.rotation = Math.atan2(s.userData.v.y, s.userData.v.x); s.scale.set(s.userData.base || (s.userData.base = s.scale.x) * 1, 1, 1); s.scale.x = s.userData.base * (1 + L * 0.5); s.scale.y = s.userData.base * 0.5; }
     if (s.userData.t > s.userData.life) { scene.remove(s); fallers.splice(i, 1); }
   }
+  if (simDt !== undefined) return;   // fixed-step simulation for tests: no render, no new frame
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
@@ -1246,6 +1333,6 @@ function tick() {
     phraseToday = saved.phrase; $('#phrase').textContent = saved.phrase; applyShine(saved.shine); showScreen('s3'); setFrame('s3');
   }
   play('idle');
-  window.__ori = { game, tick, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, pant, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
+  window.__ori = { game, tick, sim: (dt) => tick(0, dt), eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, pant, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
   tick();
 })();
