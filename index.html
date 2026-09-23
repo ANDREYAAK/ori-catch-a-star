@@ -75,6 +75,29 @@ body{transition:background .8s}
 #train button{background:var(--pill);border:1px solid var(--pill-line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:var(--ink);border-radius:12px;padding:8px 12px;font:500 12.5px/1 'MTS Text';cursor:pointer;text-align:left}
 #trainToggle{position:absolute;left:18px;top:calc(12px + env(safe-area-inset-top) + 44px);z-index:6;width:34px;height:34px;border-radius:50%;border:1px solid var(--pill-line);background:var(--pill);color:var(--ink-dim);font:500 14px/1 'MTS Text';cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center}
 #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font:400 13px/1.3 'MTS Text';color:var(--ink-dim);background:var(--scene-light);transition:opacity .5s;z-index:5}
+
+/* ---------- mini game: star fall ---------- */
+#game{position:fixed;left:0;right:0;top:calc(12px + env(safe-area-inset-top) + 62px);display:flex;flex-direction:column;align-items:center;pointer-events:none;opacity:0;transition:opacity .4s;z-index:4}
+#game.show{opacity:1}
+.g-name{font:400 12.5px/1.3 'MTS Text';color:var(--ink-dim);margin-bottom:6px}
+.g-name b{font:500 13px/1.3 'MTS Wide';color:var(--ink)}
+#gSky{width:min(78vw,340px);height:auto;overflow:visible}
+#gSky .ln{stroke:rgba(250,250,252,.18);stroke-width:.6;stroke-dasharray:1.2 1.6;transition:stroke .4s}
+#gSky .ln.lit{stroke:rgba(217,243,139,.9);stroke-dasharray:none;stroke-width:.8}
+#gSky .pt{fill:rgba(250,250,252,.25);transition:fill .3s,r .3s}
+#gSky .pt.lit{fill:#fff;filter:drop-shadow(0 0 2px #D9F38B) drop-shadow(0 0 4px #D9F38B)}
+#game.done #gSky .ln.lit{animation:gpulse 1s ease-in-out 2}
+@keyframes gpulse{50%{stroke:#fff;stroke-width:1.4}}
+.g-bar{width:min(52vw,220px);height:3px;border-radius:3px;background:rgba(250,250,252,.12);margin-top:10px;overflow:hidden}
+.g-bar i{display:block;height:100%;background:var(--mts-lime);transform-origin:left center;transition:transform .2s linear}
+#gHint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom));width:min(88vw,360px);text-align:center;font:500 14px/1.3 'MTS Text';color:var(--ink);opacity:0;transition:opacity .3s;pointer-events:none;z-index:4;text-shadow:0 2px 10px rgba(0,0,0,.5)}
+body.gaming #gHint{opacity:1}
+body.gaming #trainToggle,body.gaming #train{display:none!important}
+.g-fly{position:fixed;width:24px;height:24px;margin:-12px 0 0 -12px;border-radius:50%;pointer-events:none;z-index:7;
+  background:radial-gradient(circle,#fff 0,#fff 22%,rgba(217,243,139,.85) 42%,rgba(217,243,139,0) 70%);
+  transition:transform .6s cubic-bezier(.45,0,.25,1),opacity .6s}
+.card.shine .star{filter:drop-shadow(0 0 10px #D9F38B) drop-shadow(0 0 22px #fff);animation:twinkle 1.8s ease-in-out infinite}
+@keyframes twinkle{50%{transform:translateX(-50%) scale(1.12)}}
 @media (min-width:520px){.col{border-left:1px solid rgba(255,255,255,.06);border-right:1px solid rgba(255,255,255,.06)}}
 @media (max-height:640px){.brandbar__mts{height:40px}.screen .top{margin-top:66px}}
 </style>
@@ -132,6 +155,8 @@ body{transition:background .8s}
       <div class="note">Следующую звезду Ори поймает завтра</div>
     </div>
   </section>
+  <div id="game"><div class="g-name">Созвездие дня · <b id="gName">Ковш</b></div><svg id="gSky" viewBox="0 0 100 60"></svg><div class="g-bar"><i id="gBar"></i></div></div>
+  <div id="gHint"></div>
   <div id="hint">Покрутите Ори пальцем · мяч можно швырнуть жестом</div>
 </div></div>
 <script>window.ORI_GLB="";window.ORI_PHRASES={
@@ -349,6 +374,6 @@ body{transition:background .8s}
   ]
 }
 ;</script>
-<script src="assets/bundle.js?v=1790109528630"></script>
+<script src="assets/bundle.js?v=1790152400735"></script>
 </body>
 </html>
