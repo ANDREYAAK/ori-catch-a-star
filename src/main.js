@@ -987,6 +987,9 @@ function tapStep(dt) {
   } else if (pivot.position.y > base + 0.001 || g.fall) {
     g.fall = g.fall || { vy: 0 }; g.fall.vy -= TAP.g * dt; pivot.position.y += g.fall.vy * dt;
     if (pivot.position.y <= base) { pivot.position.y = base; g.fall = null; play('idle', { fade: 0.2 }); }
+  } else if (pivot.position.y < base - 0.001) {
+    // coming from a screen where the model sits lower (the card screen): rise onto the pedestal
+    pivot.position.y = Math.min(base, pivot.position.y + (base - pivot.position.y) * Math.min(1, 8 * dt) + 0.3 * dt);
   } else if (!g.playing) {
     const dx = g.targetX - pivot.position.x; if (Math.abs(dx) > 0.01) pivot.position.x += Math.sign(dx) * Math.min(Math.abs(dx), 1.6 * dt);
   }
