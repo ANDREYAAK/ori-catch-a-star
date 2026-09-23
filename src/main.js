@@ -29,6 +29,9 @@ const CLIPS = {
 };
 // after this many seconds without any input the dog sits down and stays seated until the next touch
 const SIT_AFTER = 3;
+// panting: an ADDITIVE loop (jaw, tongue, chest, head) laid over idle or sit now and then.
+// ref is a rest frame used as the zero pose for the additive clip.
+const PANT = { a: 1170, b: 1194, ref: 1168 };
 const JAW_HOLD = 0.34;
 
 /* ---------- DOM ---------- */
@@ -311,6 +314,16 @@ async function loadModel() {
       mixer = new THREE.AnimationMixer(ori);
       const clip = gltf.animations[0];
       for (const k in CLIPS) actions[k] = makeAction(clip, k);
+      {
+        const keep = /^(jaw|tongue[123]|chest|spine|head)\./;
+        const sub = THREE.AnimationUtils.subclip(clip, 'pant', PANT.a, PANT.b, FPS);
+        sub.tracks = sub.tracks.filter((t) => keep.test(t.name));
+        const ref = THREE.AnimationUtils.subclip(clip, 'pantRef', PANT.ref, PANT.ref + 1, FPS);
+        ref.tracks = ref.tracks.filter((t) => keep.test(t.name));
+        THREE.AnimationUtils.makeClipAdditive(sub, 0, ref, FPS);
+        pant.action = mixer.clipAction(sub, undefined, THREE.AdditiveAnimationBlendMode);
+        pant.action.setLoop(THREE.LoopRepeat, Infinity); pant.action.setEffectiveWeight(0); pant.action.play();
+      }
       resolve();
     }, reject);
   });
@@ -982,6 +995,18 @@ function stopPet() {
   play('petOut', { fade: 0.2, onDone: () => play('idle', { fade: 0.4 }) });
 }
 
+/* ---------- panting now and then ---------- */
+const pant = { action: null, w: 0, on: false, t: 0, next: 4 };
+function updatePant(dt) {
+  if (!pant.action) return;
+  const allowed = !busy && !game.on && !fetch_.mode && !petting && !holdJaw && (current === actions.idle || current === actions.sit);
+  if (pant.on) { pant.t -= dt; if (pant.t <= 0 || !allowed) { pant.on = false; pant.next = 5 + Math.random() * 7; } }
+  else if (allowed) { pant.next -= dt; if (pant.next <= 0) { pant.on = true; pant.t = 2.5 + Math.random() * 2.5; } }
+  // open gently, close a little faster
+  pant.w += ((pant.on ? 1 : 0) - pant.w) * Math.min(1, dt * (pant.on ? 3 : 5));
+  pant.action.setEffectiveWeight(pant.w < 0.002 ? 0 : pant.w);
+}
+
 /* ---------- sit when left alone ---------- */
 const sit = { state: 'stand', idle: 0, pending: null };
 function sitReady() {
@@ -1193,7 +1218,7 @@ function tick() {
       life('ear1L', ear, 0, 0); life('ear1R', ear, 0, 0); life('ear2L', ear * 1.4, 0, 0); life('ear2R', ear * 1.4, 0, 0);
     }
     ori.traverse((o) => { if (o.isMesh && o.material.userData.uni) o.material.userData.uni.uTime.value = t; });
-    updateEyes(dt); updateBlink(dt); updateSit(dt);
+    updateEyes(dt); updateBlink(dt); updateSit(dt); updatePant(dt);
     // touching the dog only rotates it: the pet reaction fired on every touch and read as a twitch,
     // so it is off (startPet/stopPet stay available for the command menu)
     if (petting) stopPet();
@@ -1221,6 +1246,6 @@ function tick() {
     phraseToday = saved.phrase; $('#phrase').textContent = saved.phrase; applyShine(saved.shine); showScreen('s3'); setFrame('s3');
   }
   play('idle');
-  window.__ori = { game, tick, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
+  window.__ori = { game, tick, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, pant, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
   tick();
 })();
