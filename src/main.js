@@ -56,7 +56,7 @@ scene.environmentIntensity = 0.45;
 const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(2.5, 4, 3); scene.add(key);
 const rim = new THREE.DirectionalLight(0xc9d6ff, 1.2); rim.position.set(-3, 2, -3); scene.add(rim);
 const fill = new THREE.HemisphereLight(0xa9b6e0, 0x1a1a30, 0.55); scene.add(fill);
-const under = new THREE.PointLight(0xd9f38b, 3.0, 5, 1.6); under.position.set(0, -0.55, 0.9); scene.add(under);
+const under = new THREE.PointLight(0xe4efff, 1.2, 5, 1.6); under.position.set(0, -0.55, 0.9); scene.add(under);   // neutral soft fill from below (no lime tint on the dog)
 
 /* ---------- star field ---------- */
 function makeStars(n, spread, size, color) {
