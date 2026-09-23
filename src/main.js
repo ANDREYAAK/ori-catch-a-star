@@ -46,6 +46,7 @@ const train = $('#train');
 
 function showScreen(id) {
   for (const k in screens) screens[k].classList.toggle('show', k === id);
+  document.body.classList.toggle('card', id === 's3');
 }
 
 /* ---------- renderer / scene ---------- */
@@ -339,7 +340,7 @@ const view = { pos: new THREE.Vector3(0, 0.9, 4.6), look: new THREE.Vector3(0, 0
 const FRAMES = {
   s1: { pos: [0, 1.0, 5.3], look: [0, 0.62, 0], model: [0, 0.12, 0] },
   s2: { pos: [0, 1.1, 5.4], look: [0, 0.85, 0], model: [0, 0.05, 0] },
-  s3: { pos: [0, 0.45, 6.8], look: [0, -0.3, 0], model: [0, -1.05, 0] },
+  s3: { pos: [0, 0.45, 6.8], look: [0, -0.3, 0], model: [0, -1.14, 0] },
   game: { pos: [0, 1.55, 7.6], look: [0, 1.2, 0], model: [0, -0.35, 0] },
 };
 let frame = 's1';
@@ -878,7 +879,7 @@ function setRecord(v) { try { localStorage.setItem('ori-record-tap', String(v));
 const fmtScore = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 function showRecord() {
   const r = getRecord();
-  document.querySelectorAll('.g-rec').forEach((el) => { el.textContent = gameMode === 'tap' && r > 0 ? `Рекорд: ${fmtScore(r)}` : ''; });
+  document.querySelectorAll('.g-rec').forEach((el) => { el.textContent = r > 0 ? fmtScore(r) : ''; });
 }
 function setGameMode(m) {
   gameMode = m; try { localStorage.setItem('ori-game-mode', m); } catch {}

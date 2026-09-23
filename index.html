@@ -37,7 +37,7 @@ body{
 .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;text-align:center;padding:0 18px;opacity:0;transition:opacity .45s ease;pointer-events:none}
 .screen.show{opacity:1;visibility:visible}
 .screen:not(.show){visibility:hidden}
-.screen .top{margin-top:clamp(78px,13vh,110px)}
+.screen .top{margin-top:clamp(146px,calc(13vh + 60px),172px)}
 .screen .bottom{margin-top:auto;margin-bottom:calc(16px + env(safe-area-inset-bottom));width:100%;display:flex;flex-direction:column;align-items:center;gap:12px}
 .screen.show .bottom{pointer-events:auto}
 .kicker{font:400 13px/1.3 'MTS Text';color:var(--ink-dim);letter-spacing:.01em}
@@ -50,11 +50,13 @@ h1 em{font-style:normal;color:var(--mts-red)}
 .gmode{display:inline-flex;gap:2px;padding:3px;border-radius:14px;background:rgba(250,250,252,.08);border:1px solid rgba(250,250,252,.12)}
 .gmode button{border:0;background:transparent;color:var(--ink-dim);font:500 13px/1.2 'MTS Text';padding:7px 12px;border-radius:11px;cursor:pointer}
 .gmode button.on{background:rgba(250,250,252,.16);color:var(--ink)}
-.g-rec{font:400 12px/1.3 'MTS Compact';color:var(--mts-lime);min-height:0}
+.g-rec{font:500 11px/1 'MTS Text';color:var(--mts-lime);margin-left:6px}
 .g-rec:empty{display:none}
-.again-row{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:8px;width:100%;max-width:400px}
-.btn.ghost{width:auto;flex:1;background:transparent;border:1px solid rgba(250,250,252,.25);box-shadow:none;padding:10px 12px;font-size:14px;white-space:nowrap}
-.again-row .gmode button{padding:7px 9px;font-size:12.5px}
+#gbar{position:fixed;left:50%;transform:translateX(-50%);top:calc(12px + env(safe-area-inset-top) + 86px);z-index:5;display:flex;gap:6px;align-items:center;pointer-events:auto;white-space:nowrap}
+#gbar .gmode button{padding:6px 10px;font-size:12.5px}
+.gpill{display:none;border:1px solid rgba(250,250,252,.25);background:rgba(250,250,252,.06);color:var(--ink);font:500 12.5px/1.2 'MTS Text';padding:7px 12px;border-radius:13px;cursor:pointer}
+body.card #gbar .gpill{display:block}
+body.gaming #gbar{display:none}
 .g-score{display:none;font:500 28px/1.1 'MTS Wide';color:var(--ink);margin-bottom:4px;text-shadow:0 2px 12px rgba(0,0,0,.5)}
 .g-score span{font:400 13px/1 'MTS Text';color:var(--ink-dim);margin-left:10px;vertical-align:middle}
 #game.tap .g-score{display:block}
@@ -122,7 +124,7 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
 .card.shine .star{filter:drop-shadow(0 0 10px #D9F38B) drop-shadow(0 0 22px #fff);animation:twinkle 1.8s ease-in-out infinite}
 @keyframes twinkle{50%{transform:translateX(-50%) scale(1.12)}}
 @media (min-width:520px){.col{border-left:1px solid rgba(255,255,255,.06);border-right:1px solid rgba(255,255,255,.06)}}
-@media (max-height:640px){.brandbar__mts{height:40px}.screen .top{margin-top:66px}}
+@media (max-height:640px){.brandbar__mts{height:40px}.screen .top{margin-top:136px}}
 </style>
 </head>
 <body>
@@ -135,6 +137,7 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
     <img class="brandbar__mts" src="assets/logo-mts.png" alt="МТС">
   </header>
   <button id="trainToggle" title="Команды" aria-label="Команды">⋯</button>
+  <div id="gbar"><div class="gmode"><button data-mode="fall">Звездопад</button><button data-mode="tap">Звёздный тап<small class="g-rec"></small></button></div><button class="gpill" id="again">Ещё раз</button></div>
   <div id="train">
     <button data-cmd="walk">Гулять</button>
     <button data-cmd="lick">Лизнуть</button>
@@ -151,8 +154,6 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
     </div>
     <div class="bottom">
       <div class="cmds"><button class="throw" id="throwBtn">Бросить мяч</button><button data-cmd="shake">Дай лапу</button><button data-cmd="roll">Кувырок</button><button data-cmd="rear">Показать животик</button></div>
-      <div class="gmode"><button data-mode="fall">Звездопад</button><button data-mode="tap">Звёздный тап</button></div>
-      <div class="g-rec"></div>
       <button class="btn" id="catch">Поймать звезду</button>
       <div class="note">Одна звезда. Одна мысль на день</div>
     </div>
@@ -163,7 +164,7 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
   </section>
 
   <section class="screen" id="s3">
-    <div class="top" style="margin-top:68px;width:100%;display:flex;flex-direction:column;align-items:center">
+    <div class="top" style="margin-top:150px;width:100%;display:flex;flex-direction:column;align-items:center">
       <div class="kicker">Ваша звезда на сегодня</div>
       <div class="card">
         <button class="card-x" id="cardClose" aria-label="Скрыть">×</button>
@@ -177,8 +178,7 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
       <div class="tag"><i></i>Один день со звёздами<i></i></div>
       <div class="cmds"><button class="throw" data-throw="1">Бросить мяч</button><button data-cmd="shake">Дай лапу</button><button data-cmd="roll">Кувырок</button><button data-cmd="rear">Показать животик</button></div>
       <button class="btn" id="share">Поделиться</button>
-      <div class="again-row"><div class="gmode"><button data-mode="fall">Звездопад</button><button data-mode="tap">Звёздный тап</button></div><button class="btn ghost" id="again">Сыграть ещё</button></div>
-      <div class="g-rec"></div>
+
       <div class="note">Следующую звезду Ори поймает завтра</div>
     </div>
   </section>
@@ -401,6 +401,6 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
   ]
 }
 ;</script>
-<script src="assets/bundle.js?v=1790203053990"></script>
+<script src="assets/bundle.js?v=1790203281121"></script>
 </body>
 </html>
