@@ -25,8 +25,6 @@ const CLIPS = {
   drop:       { a: 1010, b: 1040 },
 };
 const JAW_HOLD = 0.34;
-// plush (short dense pile) surface on the body; open the page with ?fur=0 to see the smooth version
-const PLUSH = !/[?&]fur=0\b/.test(location.search);
 
 /* ---------- DOM ---------- */
 const $ = (s) => document.querySelector(s);
@@ -209,7 +207,6 @@ function setupMaterials(root) {
         clearcoat: 0.45, clearcoatRoughness: 0.25, iridescence: 0.35, iridescenceIOR: 1.5, iridescenceThicknessRange: [150, 400],
         sheen: 0.15, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xe4efff), envMapIntensity: 0.9,
       });
-      if (PLUSH) { pm.roughness = 0.62; pm.clearcoat = 0.04; pm.iridescence = 0.1; pm.sheen = 0.9; pm.sheenRoughness = 0.4; pm.envMapIntensity = 0.75; pm.defines = { ORI_PLUSH: 1 }; }
       // nebula patches from the baked Blender emission, recoloured to the brand-guide greys (#5B6E96 .. #E4EFFF)
       pm.onBeforeCompile = (sh) => {
         sh.uniforms.uTime = { value: 0 }; pm.userData.uni = sh.uniforms;
@@ -221,21 +218,7 @@ function setupMaterials(root) {
           float vnoise(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
             return mix(mix(mix(hsh(i), hsh(i+vec3(1,0,0)), f.x), mix(hsh(i+vec3(0,1,0)), hsh(i+vec3(1,1,0)), f.x), f.y),
                        mix(mix(hsh(i+vec3(0,0,1)), hsh(i+vec3(1,0,1)), f.x), mix(hsh(i+vec3(0,1,1)), hsh(i+vec3(1,1,1)), f.x), f.y), f.z); }
-          float fbm(vec3 p){ float a = 0.0, w = 0.5; for (int k = 0; k < 4; k++) { a += w * vnoise(p); p *= 2.0; w *= 0.5; } return a; }
-          vec3 oriPerturb(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDir) {
-            vec3 vSigmaX = normalize(dFdx(surf_pos)); vec3 vSigmaY = normalize(dFdy(surf_pos)); vec3 vN = surf_norm;
-            vec3 R1 = cross(vSigmaY, vN); vec3 R2 = cross(vN, vSigmaX); float fDet = dot(vSigmaX, R1) * faceDir;
-            vec3 vGrad = sign(fDet) * (dHdxy.x * R1 + dHdxy.y * R2);
-            return normalize(abs(fDet) * surf_norm - vGrad);
-          }`)
-        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-          float oriPile = 1.0;
-          #ifdef ORI_PLUSH
-            // short dense pile: two octaves of fine noise, contrast-shaped; fibres sized to stay above pixel size on a phone
-            vec3 pq = vRest * 72.0;
-            oriPile = smoothstep(0.22, 0.78, vnoise(pq) * 0.62 + vnoise(pq * 2.3 + 7.1) * 0.38);
-            normal = oriPerturb(-vViewPosition, normal, vec2(dFdx(oriPile), dFdy(oriPile)) * 0.5, faceDirection);
-          #endif`)
+          float fbm(vec3 p){ float a = 0.0, w = 0.5; for (int k = 0; k < 4; k++) { a += w * vnoise(p); p *= 2.0; w *= 0.5; } return a; }`)
         .replace('#include <emissivemap_fragment>',
           `#ifdef USE_EMISSIVEMAP
              // baked Blender emission (sRGB texture, decoded to linear here) gives the exact patch layout from the OPAL shader
@@ -253,9 +236,6 @@ function setupMaterials(root) {
              // patches replace the white albedo (so bright lights cannot wash them out) and glow a little
              diffuseColor.rgb = mix(diffuseColor.rgb, ramp * 0.85, mask * 0.95);
              totalEmissiveRadiance = ramp * mask * 0.3 + vec3(1.0) * spark * 1.3;
-             #ifdef ORI_PLUSH
-             diffuseColor.rgb *= mix(vec3(0.74, 0.77, 0.84), vec3(1.0), oriPile);
-             #endif
            #endif`);
       };
       pm.name = name; o.material = pm;
