@@ -98,10 +98,7 @@ body.night{background:radial-gradient(120% 55% at 50% -6%,#1f2743 0%,rgba(31,39,
 body{transition:background .8s}
 #flash{position:fixed;inset:0;background:radial-gradient(circle at 50% 48%,rgba(255,255,255,.98),rgba(217,243,139,.5) 22%,rgba(27,34,54,0) 58%);opacity:0;pointer-events:none;transition:opacity .25s ease}
 #hint{position:fixed;left:50%;transform:translateX(-50%);bottom:232px;font:400 12px/1.3 'MTS Compact';color:var(--ink-dim);opacity:0;transition:opacity .4s;pointer-events:none}
-#train{position:absolute;left:18px;top:calc(12px + env(safe-area-inset-top) + 84px);z-index:6;display:none;flex-direction:column;gap:6px;pointer-events:auto}
-#train.show{display:flex}
-#train button{background:var(--pill);border:1px solid var(--pill-line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:var(--ink);border-radius:12px;padding:8px 12px;font:500 12.5px/1 'MTS Text';cursor:pointer;text-align:left}
-#trainToggle{position:absolute;left:18px;top:calc(12px + env(safe-area-inset-top) + 44px);z-index:6;width:34px;height:34px;border-radius:50%;border:1px solid var(--pill-line);background:var(--pill);color:var(--ink-dim);font:500 14px/1 'MTS Text';cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center}
+#trainToggle{position:absolute;left:18px;top:calc(12px + env(safe-area-inset-top) + 44px);z-index:6;width:34px;height:34px;border-radius:50%;border:1px solid var(--pill-line);background:var(--pill);color:var(--ink-dim);font:500 17px/1 'MTS Text';cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center}
 #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font:400 13px/1.3 'MTS Text';color:var(--ink-dim);background:var(--scene-light);transition:opacity .5s;z-index:5}
 
 /* ---------- mini game: star fall ---------- */
@@ -125,7 +122,8 @@ body{transition:background .8s}
 .g-bar i{display:block;height:100%;background:var(--mts-lime);transform-origin:left center;transition:transform .2s linear}
 #gHint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom));width:min(88vw,360px);text-align:center;font:500 14px/1.3 'MTS Text';color:var(--ink);opacity:0;transition:opacity .3s;pointer-events:none;z-index:4;text-shadow:0 2px 10px rgba(0,0,0,.5)}
 body.gaming #gHint{opacity:1}
-body.gaming #trainToggle,body.gaming #train{display:none!important}
+body.gaming #trainToggle{display:none!important}
+.cmds button.mystar{border-color:rgba(217,243,139,.6);color:var(--mts-lime)}
 .g-fly{position:fixed;width:24px;height:24px;margin:-12px 0 0 -12px;border-radius:50%;pointer-events:none;z-index:7;
   background:radial-gradient(circle,#fff 0,#fff 22%,rgba(217,243,139,.85) 42%,rgba(217,243,139,0) 70%);
   transition:transform .6s cubic-bezier(.45,0,.25,1),opacity .6s}
@@ -144,15 +142,8 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
     <img class="brandbar__dengi" src="__LOGO_DENGI__" alt="МТС Деньги">
     <img class="brandbar__mts" src="__LOGO_MTS__" alt="МТС">
   </header>
-  <button id="trainToggle" title="Команды" aria-label="Команды">⋯</button>
+  <button id="trainToggle" title="Сбросить день" aria-label="Сбросить день">↺</button>
   <div id="gbar"><div class="g-recchip">Рекорд прыжков <b class="g-rec"></b></div><button class="gpill" id="again">Ещё раз</button></div>
-  <div id="train">
-    <button data-cmd="walk">Гулять</button>
-    <button data-cmd="lick">Лизнуть</button>
-    <button data-cmd="jump">Прыжок</button>
-    <button data-cmd="showcard" id="showCard" style="display:none">Моя звезда</button>
-    <button data-cmd="reset">Сбросить день</button>
-  </div>
 
   <section class="screen show" id="s1">
     <div class="top">
@@ -161,7 +152,7 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
       <div class="sub"><b>Ори</b> · Ваш проводник к звёздам</div>
     </div>
     <div class="bottom">
-      <div class="cmds"><button class="throw" id="throwBtn">Бросить мяч</button><button data-cmd="shake">Дай лапу</button><button data-cmd="roll">Кувырок</button><button data-cmd="rear">Показать животик</button></div>
+      <div class="cmds"><button class="throw" id="throwBtn">Бросить мяч</button><button data-cmd="shake">Дай лапу</button><button data-cmd="roll">Кувырок</button><button data-cmd="rear">Показать животик</button><button data-cmd="walk">Гулять</button><button data-cmd="lick">Лизнуть</button><button data-cmd="jump">Прыжок</button></div>
       <button class="btn" id="catch">Поймать звезду</button>
       <div class="note">Одна звезда. Одна мысль на день</div>
     </div>
@@ -183,7 +174,7 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
     </div>
     <div class="bottom">
       <div class="tag"><i></i>Один день со звёздами<i></i></div>
-      <div class="cmds"><button class="throw" data-throw="1">Бросить мяч</button><button data-cmd="shake">Дай лапу</button><button data-cmd="roll">Кувырок</button><button data-cmd="rear">Показать животик</button></div>
+      <div class="cmds"><button data-cmd="showcard" id="showCard" class="mystar" style="display:none">★ Моя звезда</button><button class="throw" data-throw="1">Бросить мяч</button><button data-cmd="shake">Дай лапу</button><button data-cmd="roll">Кувырок</button><button data-cmd="rear">Показать животик</button><button data-cmd="walk">Гулять</button><button data-cmd="lick">Лизнуть</button><button data-cmd="jump">Прыжок</button></div>
       <button class="btn" id="share">Поделиться</button>
 
       <div class="note">Следующую звезду Ори поймает завтра</div>

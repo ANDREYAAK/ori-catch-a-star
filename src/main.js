@@ -43,7 +43,6 @@ const canvas = $('#canvas');
 const screens = { s1: $('#s1'), s2: $('#s2'), s3: $('#s3') };
 const flash = $('#flash');
 const hint = $('#hint');
-const train = $('#train');
 
 function showScreen(id) {
   for (const k in screens) screens[k].classList.toggle('show', k === id);
@@ -588,7 +587,7 @@ async function startGame() {
   if (sit.state !== 'stand') { wake(startGame); return; }
   if (busy || game.on) return;
   if (!pivot) return;
-  busy = true; petting = false; holdJaw = false; parkBall(); train.classList.remove('show'); hint.style.opacity = 0;
+  busy = true; petting = false; holdJaw = false; parkBall(); hint.style.opacity = 0;
   const shape = constellationOfDay();
   Object.assign(game, { mode: gameMode, meteors: [], meteorIn: METEOR.from, combo: 0, bestCombo: 0, x2: false, stun: 0, invuln: 0, hits: 0, dodged: 0, rush: false,
     wag: 0, slow: 0, hero: null, heroRing: null, heroPerfect: false, newRecord: false,
@@ -1519,7 +1518,7 @@ function command(name) {
   if (sit.state !== 'stand' && name !== 'reset' && name !== 'showcard') { wake(() => command(name)); return; }
   if (busy) return;
   if (name === 'reset') { store.clear(); location.reload(); return; }
-  if (name === 'showcard') { screens.s3.classList.remove('hidecard'); $('#showCard').style.display = 'none'; setFrame('s3'); train.classList.remove('show'); return; }
+  if (name === 'showcard') { screens.s3.classList.remove('hidecard'); $('#showCard').style.display = 'none'; setFrame('s3'); return; }
   if (!actions[name]) return;
   petting = false; busy = true;
   const loop = CLIPS[name].loop;
@@ -1534,11 +1533,10 @@ $('#share').addEventListener('click', async () => {
   const text = `${phraseToday || $('#phrase').textContent} — Ори поймал для меня звезду в МТС Деньги`;
   try { if (navigator.share) await navigator.share({ title: 'Поймай звезду', text }); else { await navigator.clipboard.writeText(text); toast('Текст скопирован'); } } catch {}
 });
-$('#trainToggle').addEventListener('click', () => train.classList.toggle('show'));
+$('#trainToggle').addEventListener('click', () => { if (confirm('Сбросить день? Звезда и фраза дня будут пойманы заново.')) command('reset'); });
 $('#cardClose').addEventListener('click', () => { screens.s3.classList.add('hidecard'); $('#showCard').style.display = ''; setFrame('s1'); });
 document.querySelectorAll('#throwBtn,[data-throw]').forEach((b) => b.addEventListener('click', armThrow));
 function syncThrowBtns() { document.querySelectorAll('#throwBtn,[data-throw]').forEach((b) => { b.classList.toggle('armed', fetch_.mode); b.textContent = fetch_.mode ? 'Тапните, куда бросить' : 'Бросить мяч'; }); }
-train.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) command(b.dataset.cmd); });
 document.querySelectorAll('.cmds').forEach((row) => row.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) command(b.dataset.cmd); }));
 
 let pointer = { x: -1, y: -1, down: false };
