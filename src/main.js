@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';   // the model is meshopt-compressed (~4x smaller)
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 /* ---------- clip table (frames in the single Blender action, 24 fps) ---------- */
@@ -122,10 +123,57 @@ const starTex = (() => {
   x.closePath(); x.fill();
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 })();
-const fallers = [];
+/* ---------- particles: every spark, trail and puff in ONE draw call ---------- */
+// (each spark used to be its own Sprite with its own material: 100+ draw calls in a busy moment of the game)
+// A spark keeps the old sprite-like API that the callers use: .position, .material.color, .userData.
+const PMAX = 1024;
+const pBuf = { pos: new Float32Array(PMAX * 3), col: new Float32Array(PMAX * 3), size: new Float32Array(PMAX), alpha: new Float32Array(PMAX) };
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pBuf.pos, 3).setUsage(THREE.DynamicDrawUsage));
+pGeo.setAttribute('color', new THREE.BufferAttribute(pBuf.col, 3).setUsage(THREE.DynamicDrawUsage));
+pGeo.setAttribute('size', new THREE.BufferAttribute(pBuf.size, 1).setUsage(THREE.DynamicDrawUsage));
+pGeo.setAttribute('alpha', new THREE.BufferAttribute(pBuf.alpha, 1).setUsage(THREE.DynamicDrawUsage));
+pGeo.setDrawRange(0, 0);
+const pMat = new THREE.ShaderMaterial({
+  uniforms: { map: { value: null }, pxPerUnit: { value: 1000 } },
+  vertexShader: `attribute float size; attribute float alpha; attribute vec3 color; varying vec3 vCol; varying float vA;
+    uniform float pxPerUnit;
+    void main() { vCol = color; vA = alpha; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = size * pxPerUnit / -mv.z; gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform sampler2D map; varying vec3 vCol; varying float vA;
+    void main() { vec4 t = texture2D(map, gl_PointCoord); gl_FragColor = vec4(vCol * t.rgb, t.a * vA);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+pMat.uniforms.map.value = starTex;
+const pPoints = new THREE.Points(pGeo, pMat); pPoints.frustumCulled = false; pPoints.renderOrder = 5; scene.add(pPoints);
+const fallers = [], sparkPool = [];
+let timeUnis = null;
 function spawnFaller(x, y, z, v, s, life) {
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: starTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-  sp.position.set(x, y, z); sp.scale.setScalar(s); sp.userData = { v, life, t: 0 }; scene.add(sp); fallers.push(sp); return sp;
+  if (fallers.length >= PMAX) return sparkPool[0] || { position: new THREE.Vector3(), material: { color: new THREE.Color() }, userData: {} };
+  const sp = sparkPool.pop() || { position: new THREE.Vector3(), material: { color: new THREE.Color(), opacity: 1 }, userData: {} };
+  sp.position.set(x, y, z); sp.material.color.setRGB(1, 1, 1); sp.material.opacity = 1; sp.size = s;
+  sp.userData.v = v; sp.userData.life = life; sp.userData.t = 0;
+  fallers.push(sp); return sp;
+}
+// emission is per SECOND, not per frame: a 120 Hz screen (or a benchmark) must not double the sparks
+const emit = (perFrameAt60, dt) => { const n = perFrameAt60 * dt * 60; return Math.floor(n) + (Math.random() < n % 1 ? 1 : 0); };
+function stepSparks(dt) {
+  let n = 0;
+  for (let i = fallers.length - 1; i >= 0; i--) {
+    const s = fallers[i], u = s.userData;
+    u.t += dt; s.position.addScaledVector(u.v, dt);
+    if (u.t > u.life) { fallers[i] = fallers[fallers.length - 1]; fallers.pop(); sparkPool.push(s); }
+  }
+  for (const s of fallers) {
+    const u = s.userData, k = n * 3;
+    pBuf.pos[k] = s.position.x; pBuf.pos[k + 1] = s.position.y; pBuf.pos[k + 2] = s.position.z;
+    pBuf.col[k] = s.material.color.r; pBuf.col[k + 1] = s.material.color.g; pBuf.col[k + 2] = s.material.color.b;
+    pBuf.size[n] = s.size; pBuf.alpha[n] = Math.max(0, 1 - u.t / u.life); n++;
+  }
+  pGeo.setDrawRange(0, n);
+  if (n) for (const a of ['position', 'color', 'size', 'alpha']) pGeo.attributes[a].needsUpdate = true;
 }
 
 /* ---------- model ---------- */
@@ -297,7 +345,7 @@ function play(name, { fade = 0.25, onDone, speed = 1 } = {}) {
 async function loadModel() {
   const buf = window.ORI_GLB ? decodeGLB(window.ORI_GLB) : await (await fetch('assets/ori.glb')).arrayBuffer();
   return new Promise((resolve, reject) => {
-    const loader = new GLTFLoader();
+    const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
     loader.parse(buf, '', (gltf) => {
       ori = gltf.scene; ori.scale.setScalar(MODEL_SCALE);
       setupMaterials(ori);
@@ -419,62 +467,6 @@ function parkBall() {
 function unparkBall() {
   if (!fetch_.ball) return;
   fetch_.ball.position.set(pivot.position.x + 0.42, floorY(), pivot.position.z + 0.5); fetch_.ball.visible = true;
-}
-
-async function catchStar() {
-  if (busy) return; busy = true; petting = false; holdJaw = false;
-  parkBall();
-  showScreen('s2'); setFrame('s2'); hint.style.opacity = 0;
-  document.body.classList.add('night');
-  // Ori looks up at the sky, tail wagging
-  const lookUp = actions.petIn; if (lookUp) { if (current && current !== lookUp) current.fadeOut(0.25); lookUp.reset().setEffectiveWeight(1).fadeIn(0.25).play(); lookUp.paused = false; current = lookUp; }
-  // star rain: diagonal streaks, brighter, with a lime tint on some
-  for (let i = 0; i < 14; i++) {
-    setTimeout(() => {
-      const st = spawnFaller(-1.2 + Math.random() * 3.6, 2.4 + Math.random() * 0.9, -2.0 - Math.random() * 2.5, new THREE.Vector3(-1.2 - Math.random() * 0.5, -2.2 - Math.random() * 0.9, 0), 0.07 + Math.random() * 0.06, 2.0);
-      st.material.color.set(Math.random() < 0.3 ? 0xd9f38b : 0xffffff);
-      st.userData.streak = true;
-    }, i * 90);
-  }
-  await wait(900);
-  // the hero star: big, glowing, with a trail; arcs down toward Ori's mouth while Ori jumps
-  const hero = makeHeroStar(); scene.add(hero);
-  const start = new THREE.Vector3(2.2, 3.6, -1.2); hero.position.copy(start);
-  await wait(250);
-  play('jump', { fade: 0.15 });
-  const t0 = performance.now();
-  await new Promise((res) => {
-    const step = () => {
-      const t = Math.min(1, (performance.now() - t0) / 1150);
-      const target = mouthWorld();
-      const e = t * t * (3 - 2 * t);
-      hero.position.lerpVectors(start, target, e);
-      hero.position.y += Math.sin(t * Math.PI) * 0.5;
-      const sc = 1 - 0.45 * e; hero.userData.core.scale.setScalar(0.5 * sc); hero.userData.glow.scale.setScalar((1.1 + 0.25 * Math.sin(t * 40)) * sc);
-      hero.rotation.z += 0.05;
-      if (t > 0.1) emitTrail(hero.position);
-      if (t < 1) requestAnimationFrame(step); else res();
-    };
-    step();
-  });
-  // catch: burst of sparks from the mouth, flash, then Ori lands
-  const m = mouthWorld();
-  for (let i = 0; i < 14; i++) { const a = Math.random() * Math.PI * 2, r = 1.6 + Math.random() * 1.6; const s = spawnFaller(m.x, m.y, m.z, new THREE.Vector3(Math.cos(a) * r, 0.6 + Math.random() * 1.8, Math.sin(a) * r * 0.5), 0.06 + Math.random() * 0.08, 0.6); s.material.color.set(Math.random() < 0.4 ? 0xd9f38b : 0xffffff); }
-  scene.remove(hero);
-  flash.style.opacity = 1; await wait(220); flash.style.opacity = 0;
-  phraseToday = pickPhrase();
-  const rec = store.get() || { used: [] };
-  store.set({ date: TODAY, phrase: phraseToday, used: [...(rec.used || []), phraseToday].slice(-160) });
-  $('#phrase').textContent = phraseToday;
-  await wait(650);
-  document.body.classList.remove('night');
-  showScreen('s3'); setFrame('s3');
-  play('pet', { fade: 0.3 });
-  await wait(1400);
-  play('idle', { fade: 0.5 });
-  unparkBall();
-  busy = false;
-  hint.style.opacity = 0;
 }
 
 const _v = new THREE.Vector3();
@@ -1047,7 +1039,7 @@ function jumpStep(dt) {
   // rocket: steady flight up
   if (g.rocket > 0) {
     g.rocket -= dt; g.vy = 9;
-    for (let k = 0; k < 2; k++) { const f = spawnFaller(pivot.position.x + (Math.random() - 0.5) * 0.2, pivot.position.y, 0.2, new THREE.Vector3((Math.random() - 0.5) * 0.6, -2.5, 0), 0.07 + Math.random() * 0.05, 0.4); f.material.color.set(Math.random() < 0.5 ? 0xff0032 : 0xffb347); }
+    for (let k = 0, n = emit(2, dt); k < n; k++) { const f = spawnFaller(pivot.position.x + (Math.random() - 0.5) * 0.2, pivot.position.y, 0.2, new THREE.Vector3((Math.random() - 0.5) * 0.6, -2.5, 0), 0.07 + Math.random() * 0.05, 0.4); f.material.color.set(Math.random() < 0.5 ? 0xff0032 : 0xffb347); }
     if (g.rocket <= 0) { g.vy = 4; }
   }
   // gravity and landings
@@ -1175,14 +1167,14 @@ function jumpStep(dt) {
   if (g.windT > 0) {
     g.windT -= dt; const ramp = Math.min(1, (2.4 - g.windT) / 0.6) * Math.min(1, g.windT / 0.4);
     g.wind = g.windDir * 2.3 * Math.max(0, ramp);
-    if (Math.random() < 0.8) { const f = spawnFaller(-g.windDir * (b.xm + 1.2), b.bot + Math.random() * (b.top - b.bot), 0.4, new THREE.Vector3(g.windDir * 6, 0, 0), 0.03, 0.6); f.material.color.set(0xdfe7ff); }
+    for (let k = 0, n = emit(0.8, dt); k < n; k++) { const f = spawnFaller(-g.windDir * (b.xm + 1.2), b.bot + Math.random() * (b.top - b.bot), 0.4, new THREE.Vector3(g.windDir * 6, 0, 0), 0.03, 0.6); f.material.color.set(0xdfe7ff); }
   } else g.wind = 0;
   // flying meteors
   if (L.meteor > 0) { g.meteorIn -= dt; if (g.meteorIn <= 0) { spawnJumpMeteor(); g.meteorIn = L.meteor * Math.pow(0.9, lv.extra) * (0.7 + Math.random() * 0.6); } }
   const seg = new THREE.Line3(pivot.position.clone().add(new THREE.Vector3(0, 0.2, 0)), pivot.position.clone().add(new THREE.Vector3(0, 1.0, 0))), cp = new THREE.Vector3();
   for (let i = g.meteors.length - 1; i >= 0; i--) {
     const mt = g.meteors[i]; mt.sp.position.x += mt.vx * dt; mt.sp.position.y += mt.vy * dt; mt.sp.material.rotation += mt.spin * dt;
-    if (Math.random() < 0.7) { const f = spawnFaller(mt.sp.position.x - Math.sign(mt.vx) * 0.12, mt.sp.position.y, 0.3, new THREE.Vector3(-mt.vx * 0.3, 0.2, 0), 0.05 + Math.random() * 0.04, 0.35); f.material.color.set(Math.random() < 0.5 ? 0xff0032 : 0x5a6488); }
+    for (let k = 0, n = emit(0.7, dt); k < n; k++) { const f = spawnFaller(mt.sp.position.x - Math.sign(mt.vx) * 0.12, mt.sp.position.y, 0.3, new THREE.Vector3(-mt.vx * 0.3, 0.2, 0), 0.05 + Math.random() * 0.04, 0.35); f.material.color.set(Math.random() < 0.5 ? 0xff0032 : 0x5a6488); }
     if (!(g.invuln > 0) && g.rocket <= 0) {
       const mp = mt.sp.position.clone(); mp.z = 0; seg.closestPointToPoint(mp, true, cp);
       if (cp.distanceTo(mp) < 0.38) {
@@ -1721,7 +1713,8 @@ function tick(_ts, simDt) {
       const ear = 0.04 * Math.sin(t * 1.6) + 0.02 * br;
       life('ear1L', ear, 0, 0); life('ear1R', ear, 0, 0); life('ear2L', ear * 1.4, 0, 0); life('ear2R', ear * 1.4, 0, 0);
     }
-    ori.traverse((o) => { if (o.isMesh && o.material.userData.uni) o.material.userData.uni.uTime.value = t; });
+    if (!timeUnis) { timeUnis = []; ori.traverse((o) => { if (o.isMesh && o.material.userData.uni) timeUnis.push(o.material.userData.uni); }); }   // collected once, not every frame
+    for (const u of timeUnis) u.uTime.value = t;
     updateEyes(dt); updateBlink(dt); updateSit(dt); updatePant(dt);
     // touching the dog only rotates it: the pet reaction fired on every touch and read as a twitch,
     // so it is off (startPet/stopPet stay available for the command menu)
@@ -1729,14 +1722,9 @@ function tick(_ts, simDt) {
   }
   stepBallPhysics(dt);
   if (fetch_.ball && fetch_.ball.visible && !phys.on && fetch_.ball.parent === scene && !busy) fetch_.ball.position.y = floorY();
-  // fallers
-  for (let i = fallers.length - 1; i >= 0; i--) {
-    const s = fallers[i]; if (s.userData.hero) continue;
-    s.userData.t += dt; s.position.addScaledVector(s.userData.v, dt);
-    s.material.opacity = Math.max(0, 1 - s.userData.t / s.userData.life);
-    if (s.userData.streak) { const L = s.userData.v.length(); s.material.rotation = Math.atan2(s.userData.v.y, s.userData.v.x); s.scale.set(s.userData.base || (s.userData.base = s.scale.x) * 1, 1, 1); s.scale.x = s.userData.base * (1 + L * 0.5); s.scale.y = s.userData.base * 0.5; }
-    if (s.userData.t > s.userData.life) { scene.remove(s); fallers.splice(i, 1); }
-  }
+  // sparks: one draw call; the point size matches the old sprites (world units -> pixels at this camera)
+  stepSparks(dt);
+  pMat.uniforms.pxPerUnit.value = renderer.domElement.height * 0.5 * camera.projectionMatrix.elements[5];
   if (simDt !== undefined) return;   // fixed-step simulation for tests: no render, no new frame
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
@@ -1751,6 +1739,6 @@ function tick(_ts, simDt) {
     phraseToday = saved.phrase; $('#phrase').textContent = saved.phrase; applyShine(saved.shine); showScreen('s3'); setFrame('s3');
   }
   play('idle');
-  window.__ori = { game, tick, sim: (dt) => tick(0, dt), toScreen, startGame, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, pant, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
+  window.__ori = { game, tick, sim: (dt) => tick(0, dt), toScreen, startGame, camera, renderer, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, pant, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
   tick();
 })();

@@ -94,6 +94,19 @@ parts.update({o.name:m_ink for o in ink_objs})
 for n in ('LID_L','LID_R'):
     o=bpy.data.objects[n]; o.material_slots[0].material=m_lid; o.material_slots[1].material=m_ink; parts[n]=m_lid
 log('ink curves converted',[ (o.name,len(o.data.polygons)) for o in ink_objs])
+# ---------- 3c. lighter geometry for the tiny parts ----------
+# these meshes cover a few dozen pixels on screen but were exported at high subdivision (the two eye lenses alone
+# were 147k triangles). Lower subdivision keeps the same smooth limit shape with far fewer triangles.
+SUBD={'LENS_L':1,'LENS_R':1,'NOSE':0,'SCLERA_L':1,'SCLERA_R':1,'TEETH_UP':1,'TEETH_LO':1,'TONGUE':1}
+LIGHT_ON=os.environ.get('ORI_LIGHT','1')=='1'
+if LIGHT_ON:
+    for n,lv in SUBD.items():
+        o=bpy.data.objects.get(n)
+        for m in (o.modifiers if o else []):
+            if m.type=='SUBSURF': m.levels=min(m.levels,lv); m.render_levels=min(m.render_levels,lv)
+    o=bpy.data.objects.get('INK_MOUTH_line')   # a flat ribbon: plain decimation is fine
+    if o: d=o.modifiers.new('WEBDEC','DECIMATE'); d.ratio=0.35
+log('light parts', LIGHT_ON)
 # ---------- 4. export ----------
 for o in bpy.context.view_layer.objects: o.select_set(False)
 sel=[web,rig]+[bpy.data.objects[n] for n in parts]
