@@ -29,9 +29,11 @@ const CLIPS = {
   sitUp:      { a: 1146, b: 1166 },
   belly:      { a: 1230, b: 1326 },
 };
-// BELLY: on its back the torso spreads under its weight (morph target Flat, same timing as in Blender)
-const flatAt = (f) => { const ss = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
-  return f <= 1240 || f >= 1312 ? 0 : f < 1252 ? ss((f - 1240) / 12) : f <= 1300 ? 1 : 1 - ss((f - 1300) / 12); };
+// BELLY v2 lies with a straight back on the floor without squashing the torso: morph target Flat stays at 0
+const flatAt = () => 0;
+// BELLY: calmer tail wag while lying on the back (1256-1298), so the tail sweeps along the floor instead of poking into it
+const bellyWagK = (f) => { const ss = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+  return f <= 1250 || f >= 1304 ? 1 : f < 1256 ? 1 - 0.6 * ss((f - 1250) / 6) : f <= 1298 ? 0.4 : 0.4 + 0.6 * ss((f - 1298) / 6); };
 const flatMeshes = [];
 // after this many seconds without any input the dog sits down and stays seated until the next touch
 const SIT_AFTER = 3;
@@ -1705,7 +1707,8 @@ function tick(_ts, simDt) {
     if (game.on) gamePose(dt);
     if (holdJaw && jawBone) { const e = new THREE.Euler().setFromQuaternion(jawBone.quaternion, 'XYZ'); if (e.x < JAW_HOLD) { e.x = JAW_HOLD; jawBone.quaternion.setFromEuler(e); } }
     // tail wag on top of the clips
-    const wagAmp = THREE.MathUtils.degToRad(petting || (game.on && game.wag > 0) ? tail.amp * 2.2 : sit.state === 'sitting' ? tail.amp * 0.3 : tail.amp), wagT = t * (petting ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
+    const _ba = actions.belly, bellyK = _ba && _ba.isRunning() ? bellyWagK(CLIPS.belly.a + _ba.time * FPS) : 1;
+    const wagAmp = bellyK * THREE.MathUtils.degToRad(petting || (game.on && game.wag > 0) ? tail.amp * 2.2 : sit.state === 'sitting' ? tail.amp * 0.3 : tail.amp), wagT = t * (petting ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
     for (let i = 0; i < 5; i++) {
       const b = tail.bones[i]; if (!b) continue;
       const z = wagAmp * tail.gains[i] * Math.sin(wagT - tail.lags[i]);
