@@ -491,11 +491,9 @@ function headScreen() {
   return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight };
 }
 
-/* ---------- mini game: star fall and the constellation of the day ---------- */
-// Drag = Ori runs after your finger, stars are caught automatically when they reach his mouth (with a soft magnet),
-// tap = leap (for comets). Every catch lights a point of today's constellation; when it is complete the star of
-// the day falls and a tap at the right moment makes it a "shining" star. There is no way to lose: if time runs out
-// Ori finishes the constellation himself.
+/* ---------- mini game: "Прыжки к звёздам" and the constellation of the day ---------- */
+// The constellation of the day lights up as Ori climbs toward the star of the day (see the jump block below);
+// the run ends with the shared jump-and-grab finale and today's card.
 const CONSTELLATIONS = [
   { name: 'Ковш', pts: [[8, 14], [21, 18], [33, 24], [45, 31], [48, 47], [67, 50], [70, 33]], lines: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 3]] },
   { name: 'Сердце', pts: [[50, 55], [33, 41], [25, 25], [36, 11], [50, 21], [64, 11], [75, 25], [67, 41]], lines: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 0]] },
@@ -567,17 +565,6 @@ function unlightUnit(idx) {
   const el = game.ptEls[idx >> 1]; el.classList.remove('lost'); void el.getBBox(); el.classList.add('lost');
 }
 function setX2(on) { game.x2 = on; gX2.classList.toggle('on', on); }
-function spawnMeteor(aim) {
-  const g = game, xm = Math.abs(ndcToPlane(playNdc(0.7), 0, STAR_Z).x), top = ndcToPlane(0, 1.08, STAR_Z);
-  let x = aim ? pivot.position.x + (Math.random() - 0.5) * 0.3 : (Math.random() * 2 - 1) * xm;
-  x = THREE.MathUtils.clamp(x, -xm, xm);
-  const land = g.baseY + 0.08;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: meteorTex, transparent: true, depthWrite: false }));
-  sp.scale.setScalar(0.3); sp.position.set(x, top.y, STAR_Z); scene.add(sp);
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.14, 0.2, 40), new THREE.MeshBasicMaterial({ color: 0xff0032, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
-  ring.rotation.x = -Math.PI / 2; ring.position.set(x, g.baseY + 0.012, STAR_Z * 0.5); scene.add(ring);
-  g.meteors.push({ sp, ring, t: 0, land, vy: (top.y - land) / METEOR.fall, spin: (Math.random() - 0.5) * 4 });
-}
 function removeMeteor(i) {
   const mt = game.meteors[i]; scene.remove(mt.sp); mt.sp.material.dispose();
   if (mt.ring) { scene.remove(mt.ring); mt.ring.geometry.dispose(); mt.ring.material.dispose(); }
@@ -587,13 +574,6 @@ function meteorBurst(p, n, hit) {
   for (let k = 0; k < n; k++) { const a = Math.random() * Math.PI, r = 0.5 + Math.random() * (hit ? 1.4 : 0.8);
     const f = spawnFaller(p.x, p.y, p.z, new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r * 0.8, 0), 0.05 + Math.random() * 0.05, 0.5);
     f.material.color.set(Math.random() < (hit ? 0.6 : 0.3) ? 0xff0032 : 0x8a93ad); }
-}
-function meteorHit(i) {
-  const g = game, p = g.meteors[i].sp.position.clone(); removeMeteor(i); meteorBurst(p, 14, true);
-  g.hits++; g.combo = 0; setX2(false); g.stun = METEOR.stun; g.invuln = METEOR.invuln;
-  try { navigator.vibrate && navigator.vibrate(80); } catch {}
-  if (g.lit > 0) { const idx = --g.lit; unlightUnit(idx); gSay('Метеорит сбил звезду!', 1300); }
-  else gSay('Осторожно, метеориты!', 1300);
 }
 function gSay(text, ms) {
   gHint.textContent = text;
@@ -606,43 +586,10 @@ function makeGameStar(kind) {
   sp.scale.setScalar(kind === 'comet' ? 0.36 : kind === 'blue' ? 0.27 : 0.23);
   scene.add(sp); game.stars.push(sp); return sp;
 }
-function spawnStar() {
-  const blue = game.t > 3 && Math.random() < 0.22, kind = blue ? 'blue' : 'white';
-  const top = ndcToPlane(0, 1.06, STAR_Z), xm = Math.abs(ndcToPlane(playNdc(0.8), 0, STAR_Z).x);
-  const sp = makeGameStar(kind);
-  // stars appear away from where Ori stands, so catching them takes a run
-  let x = 0, dogX = pivot ? pivot.position.x : 0;
-  for (let k = 0; k < 8; k++) { x = (Math.random() * 2 - 1) * xm; if (Math.abs(x - dogX) > 0.55) break; }
-  sp.position.set(x, top.y, STAR_Z);
-  const ramp = 1.15 + 0.5 * game.t / game.dur;
-  sp.userData = { kind, v: new THREE.Vector3((Math.random() - 0.5) * 0.3, -(blue ? 1.75 + Math.random() * 0.35 : 1.0 + Math.random() * 0.45) * ramp, 0), spin: (Math.random() - 0.5) * 3 };
-}
-function spawnComet() {
-  const dir = Math.random() < 0.5 ? 1 : -1, xm = Math.abs(ndcToPlane(1.12, 0, STAR_Z).x);
-  const sp = makeGameStar('comet');
-  sp.position.set(-dir * xm, game.mouthY0 + 0.55, STAR_Z);
-  sp.userData = { kind: 'comet', v: new THREE.Vector3(dir * 1.7, 0, 0), spin: 4 };
-  gSay('Комета! Тапните — Ори прыгнет', 2200);
-}
 function removeGameStar(i, puff) {
   const s = game.stars[i];
   if (puff) for (let k = 0; k < 5; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(s.position.x, s.position.y, s.position.z, new THREE.Vector3(Math.cos(a) * 0.6, Math.sin(a) * 0.5, 0), 0.05, 0.45); f.material.color.copy(s.material.color); }
   scene.remove(s); s.material.dispose(); game.stars.splice(i, 1);
-}
-function catchGameStar(i) {
-  const s = game.stars[i], kind = s.userData.kind, m = mouthWorld();
-  for (let k = 0; k < 10; k++) { const a = Math.random() * Math.PI * 2, r = 1 + Math.random() * 1.2; const f = spawnFaller(m.x, m.y, m.z + 0.1, new THREE.Vector3(Math.cos(a) * r, 0.4 + Math.random() * 1.2, 0), 0.05 + Math.random() * 0.05, 0.5); f.material.color.set(kind === 'blue' ? 0x9fc8ff : kind === 'comet' ? 0xd9f38b : 0xffffff); }
-  removeGameStar(i, false);
-  if (catchLick.action) catchLick.action.reset().setEffectiveWeight(1).play(); else game.snap = 0.24;
-  game.wag = 0.7; game.caught++;
-  game.combo++; game.bestCombo = Math.max(game.bestCombo, game.combo);
-  const mult = game.x2 ? 2 : 1;
-  if (game.x2 && --game.x2left <= 0) { setX2(false); game.combo = 0; }   // the bonus lasts a few stars, then a new series starts
-  else if (!game.x2 && game.combo >= METEOR.series) { setX2(true); game.x2left = METEOR.seriesLen; gSay('Серия ×2!', 1400); }
-  if (kind === 'comet') { game.cometCaught++; gSay('Поймал комету!', 1600); }
-  const n = (kind === 'white' ? 1 : 2) * mult, from = toScreen(m);
-  for (let k = 0; k < n && game.lit < game.need; k++) { const idx = game.lit++; setTimeout(() => flyToSky(from, idx), k * 120); }
-  if (game.lit >= game.need) startFinale();
 }
 
 async function startGame() {
@@ -654,25 +601,25 @@ async function startGame() {
   Object.assign(game, { mode: gameMode, meteors: [], meteorIn: METEOR.from, combo: 0, bestCombo: 0, x2: false, stun: 0, invuln: 0, hits: 0, dodged: 0, rush: false,
     wag: 0, slow: 0, hero: null, heroRing: null, heroPerfect: false, newRecord: false,
     plats: [], bonuses: [], holes: [], bank: 0, best: 0, alt: 0, vy: 0, noShine: false, dayStar: false, mouthOff: null });
-  gX2.textContent = 'Серия ×2';
-  gEl.classList.toggle('jump', gameMode === 'jump');
+  gX2.textContent = '';
+  gEl.classList.add('jump');
   setX2(false);
-  Object.assign(game, { on: true, t: 0, dur: 25, stars: [], lit: 0, need: shape.pts.length * 2, caught: 0, cometCaught: 0, comets: 0,
-    spawnIn: 1.2, cometIn: 6.5, snap: 0, leap: null, anim: '', finale: false, lockAnim: false, helped: false, targetX: 0,
+  Object.assign(game, { on: true, t: 0, dur: 25, stars: [], lit: 0, need: shape.pts.length * 2, caught: 0,
+    snap: 0, leap: null, anim: '', finale: false, lockAnim: false, helped: false, targetX: 0,
     baseY: FRAMES.game.model[1], mouthY0: 0, drag: null, tapped: null, tapWindow: false, playing: false, hero: null, heroPhase: null, shape });
   buildSky(shape); gName.textContent = shape.name; gBar.style.transform = 'scaleX(1)';
-  game.baseHint = game.mode === 'jump' ? 'Ведите пальцем — Ори прыгает по планетам' : 'Ведите пальцем — Ори бежит за звёздами';
-  showScreen(null); setFrame('game'); zoom.target = gameMode === 'jump' ? 1.5 : 1.0;   // jump mode: a wider view of the sky
+  game.baseHint = 'Ведите пальцем — Ори прыгает по планетам';
+  showScreen(null); setFrame('game'); zoom.target = 1.5;   // a wider view of the sky
   spin.y = spin.x = spin.vy = 0;
-  if (game.mode === 'jump') jumpStart();
+  jumpStart();
   updateScore();
   document.body.classList.add('night', 'gaming'); gEl.classList.remove('done'); gEl.classList.add('show');
-  gSay('Соберите созвездие дня');
+  gSay('Допрыгни до звезды дня — она на 100 м');
   play('idle', { fade: 0.3 });
   await wait(1100);
   game.mouthY0 = mouthWorld().y; game.mouthOff = mouthWorld().sub(pivot.position);
   gSay(game.baseHint); game.playing = true;
-  if (game.mode === 'jump') jumpBounce(JUMP.v0);
+  jumpBounce(JUMP.v0);
 }
 
 // shared finale: the star of the day falls through a lime ring above Ori; a tap makes him leap and grab it
@@ -685,7 +632,7 @@ async function startFinale() {
   for (let i = g.meteors.length - 1; i >= 0; i--) { meteorBurst(g.meteors[i].sp.position, 5, false); removeMeteor(i); }
   setX2(false); g.stun = 0;
   gBar.style.transform = 'scaleX(0)';
-  if (g.mode === 'jump') {
+  {
     // the run is over: clear the planets and drop Ori back onto the pedestal
     jumpCleanup(); g.rocket = 0; g.wind = 0; g.slip = 0; setX2(false);
     pedestal.visible = true; pivot.position.set(pivot.position.x, jumpBounds().top + 0.5, 0); g.vy = 0; g.targetX = 0;
@@ -706,8 +653,6 @@ async function startFinale() {
   await wait(800);
   gEl.classList.add('done'); gSay('Созвездие собрано!');
   await wait(900);
-  if (g.mode === 'jump') { /* summary already shown */ }
-  else if (!g.helped || g.caught > 0) { gSay(`Звёзд: ${g.caught} · метеоритов мимо: ${g.dodged} · лучшая серия: ${g.bestCombo}`); await wait(1500); }
   g.targetX = 0;
   const t0 = performance.now(); while ((Math.abs(pivot.position.x) > 0.05 || pivot.position.y > g.baseY + 0.02) && performance.now() - t0 < 1800) await wait(40);
   await wait(250);
@@ -719,7 +664,7 @@ async function startFinale() {
   scene.add(ring); g.heroRing = ring;
   g.tapped = null;
   await new Promise((res) => { g.heroPhase = { stage: 'fall', t: 0, topY: top.y, done: res }; });
-  await heroFinish((g.heroPerfect && !g.noShine) || (g.mode === 'fall' && g.cometCaught > 0 && !g.helped));
+  await heroFinish(g.heroPerfect && !g.noShine);
 }
 function heroStep(rdt) {
   const g = game, hp = g.heroPhase, hero = g.hero;
@@ -820,68 +765,9 @@ function endGame() {
 function gameStep(dt) {
   const g = game;
   if (g.heroPhase && g.hero) { heroStep(dt); pedestal.position.set(pivot.position.x, g.baseY + 0.005, pivot.position.z); return; }
-  if (g.mode === 'jump') { jumpStep(dt); return; }
-  const xm = Math.abs(ndcToPlane(playNdc(0.78), -0.3, 0).x);
-  const tx = THREE.MathUtils.clamp(g.targetX, -xm, xm), dx = tx - pivot.position.x;
-  if (g.stun > 0) g.stun -= dt; if (g.invuln > 0) g.invuln -= dt; if (g.wag > 0) g.wag -= dt;
-  const moving = Math.abs(dx) > 0.05 && !g.leap && !g.lockAnim && !(g.stun > 0);
-  if (moving) pivot.position.x += Math.sign(dx) * Math.min(Math.abs(dx), RUN_SPEED * 1.15 * dt);
-  if (!g.lockAnim) {
-    const want = g.leap ? 'leap' : moving ? 'run' : 'idle';
-    if (want !== g.anim) { g.anim = want; if (want === 'run') play('walk', { fade: 0.12, speed: RUN_ANIM }); else if (want === 'idle') play('idle', { fade: 0.25 }); }
-  }
-  const wantYaw = moving ? Math.sign(dx) * 1.2 : 0;
-  let dyw = wantYaw - pivot.rotation.y; dyw = Math.atan2(Math.sin(dyw), Math.cos(dyw)); pivot.rotation.y += dyw * Math.min(1, 9 * dt);
-  pivot.rotation.x = 0;
-  let hop = 0;
-  if (g.leap) { g.leap.t += dt; const u = g.leap.t / g.leap.dur; if (u >= 1) { g.leap = null; g.anim = ''; } else hop = Math.sin(Math.PI * u) * 0.42; }
-  pivot.position.y += (g.baseY + hop - pivot.position.y) * (g.leap ? 1 : 0.12);
-  pivot.position.z += (0 - pivot.position.z) * 0.12;
-  pedestal.position.set(pivot.position.x, g.baseY + 0.005, pivot.position.z);
-  if (!g.playing) return;
-  g.t += dt; gBar.style.transform = `scaleX(${Math.max(0, 1 - g.t / g.dur)})`;
-  const rush = g.t >= g.dur - METEOR.rush;
-  if (rush && !g.rush) { g.rush = true; gSay('Звездопад!', 1500); }
-  g.spawnIn -= dt; if (g.spawnIn <= 0) { spawnStar(); g.spawnIn = rush ? 0.2 : THREE.MathUtils.lerp(1.25, 0.8, g.t / g.dur); }
-  g.cometIn -= dt; if (g.cometIn <= 0 && g.comets < 2 && !rush) { spawnComet(); g.comets++; g.cometIn = 7 + Math.random() * 2; }
-  if (g.t >= METEOR.from && !rush) {
-    g.meteorIn -= dt;
-    if (g.meteorIn <= 0) {
-      const late = g.t > 15;
-      spawnMeteor(Math.random() < 0.7);
-      if (Math.random() < (late ? 0.45 : 0.15)) spawnMeteor(false);
-      if (g.t < METEOR.from + 0.1) gSay('Метеориты! Уворачивайтесь', 1600);
-      g.meteorIn = late ? 1.0 + Math.random() * 0.4 : 1.7 + Math.random() * 0.5;
-    }
-  }
-  const mh = mouthWorld();
-  for (let i = g.meteors.length - 1; i >= 0; i--) {
-    const mt = g.meteors[i]; mt.t += dt;
-    mt.sp.position.y -= mt.vy * dt; mt.sp.material.rotation += mt.spin * dt;
-    const u = Math.min(1, mt.t / METEOR.fall);
-    mt.ring.material.opacity = 0.25 + 0.6 * u; mt.ring.scale.setScalar(1.8 - 0.8 * u);
-    if (Math.random() < 0.7) { const f = spawnFaller(mt.sp.position.x, mt.sp.position.y + 0.08, mt.sp.position.z, new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.6, 0), 0.04 + Math.random() * 0.04, 0.35); f.material.color.set(Math.random() < 0.5 ? 0xff0032 : 0x5a6488); }
-    const y = mt.sp.position.y;
-    if (!(g.invuln > 0) && Math.abs(mt.sp.position.x - pivot.position.x) < METEOR.hitHalfW && y < mh.y + 0.22 && y > pivot.position.y + 0.1) { meteorHit(i); continue; }
-    if (y <= mt.land) { meteorBurst(mt.sp.position, 8, false); g.dodged++; removeMeteor(i); }
-  }
-  const m = mouthWorld(); let look = null, lookY = 1e9;
-  for (let i = g.stars.length - 1; i >= 0; i--) {
-    const s = g.stars[i], u = s.userData;
-    s.position.addScaledVector(u.v, dt); s.material.rotation += u.spin * dt;
-    if (u.kind === 'comet' && Math.random() < 0.6) emitTrail(s.position);
-    const ddx = m.x - s.position.x, ddy = s.position.y - m.y;
-    if (u.kind !== 'comet' && Math.abs(ddx) < MAGNET && ddy > -0.15 && ddy < 0.7) s.position.x += ddx * Math.min(1, 4 * dt);   // soft magnet: forgives a near miss, not a far one
-    if (u.kind === 'comet' && g.leap && Math.hypot(ddx, ddy) < 0.85) { s.position.x += ddx * Math.min(1, 9 * dt); s.position.y -= ddy * Math.min(1, 9 * dt); }
-    const hit = u.kind === 'comet' ? Math.hypot(ddx, ddy) < 0.3 : Math.abs(ddx) < CATCH_R && Math.abs(ddy) < 0.2;
-    if (hit) { catchGameStar(i); if (!g.playing) return; continue; }   // the last catch starts the finale, which clears the stars
-    if (u.kind !== 'comet' && s.position.y < g.baseY + 0.03) { removeGameStar(i, true); continue; }
-    if (u.kind === 'comet' && Math.abs(s.position.x) > xm * 1.6) { removeGameStar(i, false); continue; }
-    if (s.position.y > m.y - 0.1 && s.position.y < lookY) { lookY = s.position.y; look = s; }
-  }
-  if (look) { const p = toScreen(look.position); pointer.x = p.x; pointer.y = p.y; eyes.hold = 1; }
-  if (g.t >= g.dur) startFinale();
+  jumpStep(dt);
 }
+
 /* ---------- "Прыжки к звёздам": endless climb over planets ---------- */
 // Goal: the star of the day hangs at 100 m (its light is always visible at the top and grows as Ori nears it).
 // Reached it = a shining star (if he never needed rescuing); after it the climb goes on for a record.
@@ -902,22 +788,16 @@ const LEVELS = [
   { name: 'Чёрные дыры', gap: [1.6, 2.0], move: 0.3, ice: 0.15, ring: 0.08, crumble: 0.25, hot: 0.15, hole: 0.3, meteor: 4, gust: 0, star: 0.4, bonus: 0.05 },
   { name: 'Глубокий космос', gap: [1.65, 2.05], move: 0.35, ice: 0.2, ring: 0.08, crumble: 0.3, hot: 0.25, hole: 0.15, meteor: 3.2, gust: 7, star: 0.35, bonus: 0.05 },
 ];
-let gameMode = (() => { try { const m = localStorage.getItem('ori-game-mode'); return m === 'jump' || m === 'fall' ? m : 'fall'; } catch { return 'fall'; } })();
-{ const q = new URLSearchParams(location.search).get('game'); if (q === 'jump' || q === 'fall') gameMode = q; }
+const gameMode = 'jump';   // "Звездопад" was removed; the jump game is the only game
 function getRecord() { try { return +localStorage.getItem('ori-record-jump') || 0; } catch { return 0; } }
 function setRecord(v) { try { localStorage.setItem('ori-record-jump', String(v)); } catch {} }
 const fmtScore = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 function showRecord() {
   const r = getRecord();
   document.querySelectorAll('.g-rec').forEach((el) => { el.textContent = r > 0 ? `${fmtScore(r)} м` : ''; });
+  document.querySelectorAll('.g-recchip').forEach((el) => { el.style.display = r > 0 ? '' : 'none'; });
 }
-function setGameMode(m) {
-  gameMode = m; try { localStorage.setItem('ori-game-mode', m); } catch {}
-  document.querySelectorAll('.gmode button').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
-  showRecord();
-}
-document.querySelectorAll('.gmode button').forEach((b) => b.addEventListener('click', () => setGameMode(b.dataset.mode)));
-setGameMode(gameMode);
+showRecord();
 const gScore = $('#gScore'), gAlt = $('#gAlt'), gAltFill = $('#gAltFill'), gAltMe = $('#gAltMe'), gAltStar = $('#gAltStar');
 function updateScore() {
   if (!gScore) return;
@@ -1332,8 +1212,6 @@ function gamePose(dt) {
 function gameTap() {
   const g = game;
   if (g.finale) { if (g.hero && !g.tapped) g.tapped = { inWindow: g.tapWindow }; return; }
-  if (!g.playing || g.leap || g.mode === 'jump') return;
-  g.leap = { t: 0, dur: 0.62 }; g.anim = 'leap'; play('leap', { fade: 0.08, speed: 1.35 });
 }
 
 function updateEyes(dt) {
@@ -1680,7 +1558,7 @@ addEventListener('pointermove', (e) => {
   if (game.on) {
     if (game.drag && game.drag.id === e.pointerId) {
       game.drag.moved += Math.abs(e.clientX - game.drag.lx); game.drag.lx = e.clientX;
-      if ((game.mode === 'jump' || game.drag.moved > 8) && !game.finale) game.targetX = screenX2world(e.clientX);
+      if (!game.finale) game.targetX = screenX2world(e.clientX);
     }
     return;
   }
@@ -1697,7 +1575,7 @@ addEventListener('pointermove', (e) => {
   }
 });
 canvas.addEventListener('pointerdown', (e) => {
-  if (game.on && game.mode === 'jump' && game.playing) game.targetX = screenX2world(e.clientX);
+  if (game.on && game.playing) game.targetX = screenX2world(e.clientX);
   if (game.on) { game.drag = { id: e.pointerId, x: e.clientX, lx: e.clientX, t: performance.now(), moved: 0 }; try { canvas.setPointerCapture(e.pointerId); } catch {} return; }
   // pick up the resting ball with a drag
   if (fetch_.ball && !busy && !phys.on && fetch_.ball.parent === scene) {
