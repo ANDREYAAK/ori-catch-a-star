@@ -935,9 +935,12 @@ function crackTex(glow) {
   for (let i = 0; i < 9; i++) { let px = Math.random() * 256, py = Math.random() * 128; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 5; k++) { px += (Math.random() - 0.5) * 50; py += (Math.random() - 0.5) * 30; x.lineTo(px, py); } x.stroke(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
-const jumpGeo = { planet: new THREE.SphereGeometry(0.42, 32, 20), rock: new THREE.DodecahedronGeometry(0.42, 0), ring: new THREE.TorusGeometry(0.62, 0.045, 10, 48), belt: new THREE.TorusGeometry(0.66, 0.02, 8, 48) };
+const PLANET_R = 0.38;
+const jumpGeo = { planet: new THREE.SphereGeometry(PLANET_R, 40, 28), rock: new THREE.DodecahedronGeometry(0.42, 0), ring: new THREE.TorusGeometry(0.62, 0.045, 10, 48), belt: new THREE.TorusGeometry(0.66, 0.02, 8, 48) };
 const jumpMat = {
-  planet: [['#E4EFFF', '#b9c7e8'], ['#e2dcf7', '#b8acdf'], ['#dfe6f2', '#9fb0cf']].map(([a, b]) => new THREE.MeshStandardMaterial({ map: planetTex(a, b), roughness: 0.6, metalness: 0.05, emissive: 0x1c2136, emissiveIntensity: 0.3 })),
+  // a colourful system: lilac, coral, sky, mint, peach, lime, sunflower, light lavender
+  planet: [['#cbb8ff', '#9d86e8'], ['#ffa3b1', '#e0566d'], ['#a9d4ff', '#5f9be0'], ['#b6f0d8', '#4fbf98'], ['#ffd2a8', '#e8935a'],
+    ['#e6f7a8', '#a9cf4c'], ['#ffe6a0', '#e0b247'], ['#e4efff', '#a2b3dc']].map(([a, b]) => new THREE.MeshStandardMaterial({ map: planetTex(a, b), roughness: 0.55, metalness: 0.05, emissive: 0x1c2136, emissiveIntensity: 0.25 })),
   rock: new THREE.MeshStandardMaterial({ map: crackTex(false), roughness: 0.95, flatShading: true, emissive: 0xffffff, emissiveMap: crackTex(true), emissiveIntensity: 1.2 }),
   ice: new THREE.MeshStandardMaterial({ color: 0xbfd8ff, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82, emissive: 0x6f9cff, emissiveIntensity: 0.25 }),
   lime: new THREE.MeshStandardMaterial({ color: 0xd9f38b, emissive: 0xd9f38b, emissiveIntensity: 0.55, roughness: 0.4 }),
@@ -949,18 +952,18 @@ function jumpBounds() {
 }
 function makePlatform(type, x, y) {
   const grp = new THREE.Group(); let body;
-  if (type === 'crumble') { body = new THREE.Mesh(jumpGeo.rock, jumpMat.rock); body.scale.set(1.2, 0.62, 0.95); body.rotation.set(0.3, Math.random() * 3, 0.1); }
-  else if (type === 'ice') { body = new THREE.Mesh(jumpGeo.planet, jumpMat.ice.clone()); body.scale.set(1.15, 0.6, 1.0); }
+  if (type === 'crumble') { body = new THREE.Mesh(jumpGeo.rock, jumpMat.rock); body.scale.setScalar(0.9); body.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3); }
+  else if (type === 'ice') { body = new THREE.Mesh(jumpGeo.planet, jumpMat.ice.clone()); }
   else if (type === 'ground') { body = new THREE.Object3D(); }
   else {
-    const mat = type === 'rescue' ? jumpMat.lime : jumpMat.planet[Math.floor(Math.random() * 3)];
-    body = new THREE.Mesh(jumpGeo.planet, mat); body.scale.set(1.15, 0.72, 1.0); body.rotation.z = (Math.random() - 0.5) * 0.3;
+    const mat = type === 'rescue' ? jumpMat.lime : jumpMat.planet[Math.floor(Math.random() * jumpMat.planet.length)];
+    body = new THREE.Mesh(jumpGeo.planet, mat); body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
     if (type === 'move') { const b = new THREE.Mesh(jumpGeo.belt, jumpMat.belt); b.rotation.x = Math.PI / 2 - 0.25; grp.add(b); }
   }
   grp.add(body);
-  if (type === 'ring') { const r = new THREE.Mesh(jumpGeo.ring, jumpMat.lime); r.rotation.x = Math.PI / 2 - 0.2; r.position.y = 0.2; grp.add(r); }
+  if (type === 'ring') { const r = new THREE.Mesh(jumpGeo.ring, jumpMat.lime); r.rotation.x = Math.PI / 2 - 0.35; r.rotation.y = 0.25; grp.add(r); }
   grp.position.set(x, y, 0); scene.add(grp);
-  const p = { grp, body, type, w: type === 'ground' ? 1.4 : 0.5, top: type === 'ground' ? 0 : type === 'crumble' ? 0.25 : type === 'ice' ? 0.24 : 0.29, vx: 0, alive: true, gone: 0 };
+  const p = { grp, body, type, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
   if (type === 'move') p.vx = (Math.random() < 0.5 ? -1 : 1) * (0.7 + Math.random() * 0.6);
   game.plats.push(p); return p;
 }
