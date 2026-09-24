@@ -7,7 +7,7 @@ let js = out.outputFiles[0].text;
 // bundle already falls back to fetch("assets/ori.glb") when window.ORI_GLB is empty
 mkdirSync('pages/assets', { recursive: true });
 for (const f of ['MTSWide-500.woff2','MTSWide-700.woff2','MTSText-400.woff2','MTSText-500.woff2','MTSCompact-400.woff2']) copyFileSync('assets/fonts/'+f, 'pages/assets/'+f);
-copyFileSync('assets/brand/logo-dengi-dark.svg', 'pages/assets/logo-dengi.svg'); copyFileSync('assets/brand/logo-mts.png', 'pages/assets/logo-mts.png'); copyFileSync('assets/brand/favicon.svg', 'pages/assets/favicon.svg');
+copyFileSync('assets/brand/logo-dengi-white-text.svg', 'pages/assets/logo-dengi.svg'); copyFileSync('assets/brand/logo-mts.png', 'pages/assets/logo-mts.png'); copyFileSync('assets/brand/favicon.svg', 'pages/assets/favicon.svg');
 import { existsSync } from 'fs';
 copyFileSync(existsSync('ori.packed.glb') ? 'ori.packed.glb' : 'ori.glb', 'pages/assets/ori.glb');   // the compressed model when it exists
 writeFileSync('pages/assets/bundle.js', js);

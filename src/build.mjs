@@ -17,7 +17,7 @@ const rep = {
   __F_TEXT400__: b64('assets/fonts/MTSText-400.woff2', 'font/woff2'),
   __F_TEXT500__: b64('assets/fonts/MTSText-500.woff2', 'font/woff2'),
   __F_COMP400__: b64('assets/fonts/MTSCompact-400.woff2', 'font/woff2'),
-  __LOGO_DENGI__: b64('assets/brand/logo-dengi-dark.svg', 'image/svg+xml'),
+  __LOGO_DENGI__: b64('assets/brand/logo-dengi-white-text.svg', 'image/svg+xml'),
   __LOGO_MTS__: b64('assets/brand/logo-mts.png', 'image/png'),
   __FAVICON__: b64('assets/brand/favicon.svg', 'image/svg+xml'),
   __GLB__: glb, __PHRASES__: phrases, __BUNDLE__: js.replace(/<\/script>/g, '<\\/script>'),
