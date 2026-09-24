@@ -338,7 +338,7 @@ async function loadModel() {
 /* ---------- camera framing per state ---------- */
 const view = { pos: new THREE.Vector3(0, 0.9, 4.6), look: new THREE.Vector3(0, 0.75, 0), tPos: new THREE.Vector3(), tLook: new THREE.Vector3() };
 const FRAMES = {
-  s1: { pos: [0, 1.0, 5.3], look: [0, 0.62, 0], model: [0, 0.12, 0] },
+  s1: { pos: [0, 1.0, 5.3], look: [0, 0.62, 0], model: [0, -0.22, 0] },
   s2: { pos: [0, 1.1, 5.4], look: [0, 0.85, 0], model: [0, 0.05, 0] },
   s3: { pos: [0, 0.45, 6.8], look: [0, -0.3, 0], model: [0, -1.14, 0] },
   game: { pos: [0, 1.55, 7.6], look: [0, 1.2, 0], model: [0, -0.35, 0] },
