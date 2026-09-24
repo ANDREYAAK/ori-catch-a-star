@@ -651,7 +651,7 @@ async function startGame() {
   const shape = constellationOfDay();
   Object.assign(game, { mode: gameMode, meteors: [], meteorIn: METEOR.from, combo: 0, bestCombo: 0, x2: false, stun: 0, invuln: 0, hits: 0, dodged: 0, rush: false,
     wag: 0, slow: 0, hero: null, heroRing: null, heroPerfect: false, newRecord: false,
-    plats: [], lives: JUMP.lives, best: 0, alt: 0, vy: 0, mouthOff: null });
+    plats: [], bonuses: [], holes: [], bank: 0, best: 0, alt: 0, vy: 0, noShine: false, dayStar: false, mouthOff: null });
   gX2.textContent = 'Серия ×2';
   gEl.classList.toggle('jump', gameMode === 'jump');
   setX2(false);
@@ -685,9 +685,17 @@ async function startFinale() {
   gBar.style.transform = 'scaleX(0)';
   if (g.mode === 'jump') {
     // the run is over: clear the planets and drop Ori back onto the pedestal
-    for (let i = g.plats.length - 1; i >= 0; i--) removePlatform(i);
+    jumpCleanup(); g.rocket = 0; g.wind = 0; g.slip = 0; setX2(false);
     pedestal.visible = true; pivot.position.set(pivot.position.x, jumpBounds().top + 0.5, 0); g.vy = 0; g.targetX = 0;
     await wait(1400);
+    const h = Math.floor(g.best), rec = getRecord(); g.newRecord = h > rec; if (g.newRecord) setRecord(h);
+    gSay(`${g.newRecord ? 'Новый рекорд' : 'Высота'}: ${fmtScore(h)} м · ★ ${g.caught} · идеальных подряд: ${g.bestSeries}` + (g.newRecord ? '' : ` · рекорд ${fmtScore(Math.max(rec, h))} м`));
+    await wait(2200);
+    if (g.dayStar) {   // the star of the day was caught in flight: straight to the card
+      gEl.classList.add('done'); await wait(600);
+      await heroFinish(g.dayShine); return;
+    }
+    g.noShine = true;   // did not reach 100 m: Ori still gets the star, but a plain one
   }
   if (g.lit < g.need) {
     g.helped = true; gSay('Ори помогает дособрать созвездие');
@@ -696,11 +704,8 @@ async function startFinale() {
   await wait(800);
   gEl.classList.add('done'); gSay('Созвездие собрано!');
   await wait(900);
-  if (g.mode === 'jump') {
-    const h = Math.floor(g.best), rec = getRecord(); g.newRecord = h > rec; if (g.newRecord) setRecord(h);
-    gSay(g.newRecord ? `Новый рекорд высоты: ${fmtScore(h)} м!` : `Высота: ${fmtScore(h)} м · рекорд: ${fmtScore(Math.max(rec, h))} м`);
-    await wait(1800);
-  } else if (!g.helped || g.caught > 0) { gSay(`Звёзд: ${g.caught} · метеоритов мимо: ${g.dodged} · лучшая серия: ${g.bestCombo}`); await wait(1500); }
+  if (g.mode === 'jump') { /* summary already shown */ }
+  else if (!g.helped || g.caught > 0) { gSay(`Звёзд: ${g.caught} · метеоритов мимо: ${g.dodged} · лучшая серия: ${g.bestCombo}`); await wait(1500); }
   g.targetX = 0;
   const t0 = performance.now(); while ((Math.abs(pivot.position.x) > 0.05 || pivot.position.y > g.baseY + 0.02) && performance.now() - t0 < 1800) await wait(40);
   await wait(250);
@@ -712,7 +717,7 @@ async function startFinale() {
   scene.add(ring); g.heroRing = ring;
   g.tapped = null;
   await new Promise((res) => { g.heroPhase = { stage: 'fall', t: 0, topY: top.y, done: res }; });
-  await heroFinish(g.heroPerfect || (g.mode === 'fall' && g.cometCaught > 0 && !g.helped));
+  await heroFinish((g.heroPerfect && !g.noShine) || (g.mode === 'fall' && g.cometCaught > 0 && !g.helped));
 }
 function heroStep(rdt) {
   const g = game, hp = g.heroPhase, hero = g.hero;
@@ -762,7 +767,7 @@ function heroStep(rdt) {
 }
 function heroGrab(hp) {
   const g = game, hero = g.hero, m = mouthWorld();
-  const shine = g.heroPerfect;
+  const shine = g.heroPerfect && !g.noShine;
   for (let i = 0; i < (shine ? 30 : 16); i++) { const a = Math.random() * Math.PI * 2, r = 1.4 + Math.random() * 1.8; const s = spawnFaller(m.x, m.y, m.z, new THREE.Vector3(Math.cos(a) * r, 0.4 + Math.random() * 1.6, Math.sin(a) * r * 0.5), 0.06 + Math.random() * 0.08, 0.7); s.material.color.set(Math.random() < 0.45 ? 0xd9f38b : 0xffffff); }
   if (catchLick.action) catchLick.action.reset().setEffectiveWeight(1).play();
   hero.userData.core.scale.setScalar(0.17); hero.userData.glow.scale.setScalar(0.28);
@@ -800,7 +805,7 @@ function applyShine(shine) {
 }
 function endGame() {
   mixer.timeScale = 1; gEl.classList.remove('jump'); showRecord();
-  for (let i = (game.plats || []).length - 1; i >= 0; i--) removePlatform(i);
+  jumpCleanup();
   pedestal.visible = true; starsFar.position.y = 0; starsNear.position.y = 0;
   for (let i = game.stars.length - 1; i >= 0; i--) removeGameStar(i, false);
   for (let i = (game.meteors || []).length - 1; i >= 0; i--) removeMeteor(i);
@@ -876,18 +881,24 @@ function gameStep(dt) {
   if (g.t >= g.dur) startFinale();
 }
 /* ---------- "Прыжки к звёздам": endless climb over planets ---------- */
-// Ori bounces by himself; the finger (or the arrows) steers him left and right, the world scrolls down as he
-// climbs. Platforms: planet (solid), moving planet, meteorite (crumbles under him: no bounce), ice comet (one
-// bounce, then melts), lime ring (super jump). Every row has one reachable solid platform; traps are extra.
-// Small stars between the planets fill today's constellation. Flying meteors knock him down. Falling off the
-// bottom costs one of 3 lives (a rescue planet catches him); with no lives left the run ends with the shared
-// finale. Height is the score, the record is the best height.
-const JUMP = { g: 10, v0: 6.8, boost: 1.75, lives: 3, levelH: 20, maxGap: 2.1, speed: 5 };
+// Goal: the star of the day hangs at 100 m (its light is always visible at the top and grows as Ori nears it).
+// Reached it = a shining star (if he never needed rescuing); after it the climb goes on for a record.
+// Ori bounces by himself, the finger steers. Stars are CURRENCY: a fall costs 5 stars for a rescue planet,
+// no stars = the run is over. Perfect landings (close to the planet's centre) build a series: stars count x2,
+// 5 perfect in a row charge a "dash" (next bounce x3 high).
+// Levels every 20 m: Орбита → Пояс астероидов (moving planets, crumbling meteorites, flying meteors) →
+// Ледяная туманность (ice comets: one bounce, slippery edges) → Солнечный ветер (hot red dwarfs push him
+// down, side gusts) → Чёрные дыры (pull him in; skimming past the edge gives a boost) → Глубокий космос (all
+// mixed, harder every 20 m). Rare power-ups: rocket (3 s of flight), bubble (saves once), magnet (5 s).
+// Every row has one reachable safe platform; traps and hazards are extras.
+const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 20, goal: 100, maxGap: 2.1, speed: 5, rescue: 5, bank0: 5, perfect: 0.13 };
 const LEVELS = [
-  { name: 'Орбита', gap: [1.2, 1.7], move: 0, crumble: 0, ice: 0, ring: 0.07, meteor: 0, star: 0.55 },
-  { name: 'Пояс астероидов', gap: [1.4, 1.9], move: 0.3, crumble: 0.3, ice: 0, ring: 0.07, meteor: 5.5, star: 0.5 },
-  { name: 'Ледяная туманность', gap: [1.5, 2.0], move: 0.3, crumble: 0.35, ice: 0.25, ring: 0.08, meteor: 4, star: 0.5 },
-  { name: 'Глубокий космос', gap: [1.6, 2.05], move: 0.35, crumble: 0.4, ice: 0.25, ring: 0.08, meteor: 3, star: 0.45 },
+  { name: 'Орбита', gap: [1.2, 1.6], move: 0, ice: 0, ring: 0.1, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, star: 0.45, bonus: 0.03 },
+  { name: 'Пояс астероидов', gap: [1.4, 1.8], move: 0.3, ice: 0, ring: 0.08, crumble: 0.35, hot: 0, hole: 0, meteor: 5, gust: 0, star: 0.4, bonus: 0.045 },
+  { name: 'Ледяная туманность', gap: [1.5, 1.9], move: 0.2, ice: 0.35, ring: 0.08, crumble: 0.3, hot: 0, hole: 0, meteor: 4.5, gust: 0, star: 0.4, bonus: 0.045 },
+  { name: 'Солнечный ветер', gap: [1.5, 1.95], move: 0.3, ice: 0.1, ring: 0.08, crumble: 0.2, hot: 0.4, hole: 0, meteor: 4.5, gust: 6, star: 0.4, bonus: 0.05 },
+  { name: 'Чёрные дыры', gap: [1.6, 2.0], move: 0.3, ice: 0.15, ring: 0.08, crumble: 0.25, hot: 0.15, hole: 0.3, meteor: 4, gust: 0, star: 0.4, bonus: 0.05 },
+  { name: 'Глубокий космос', gap: [1.65, 2.05], move: 0.35, ice: 0.2, ring: 0.08, crumble: 0.3, hot: 0.25, hole: 0.15, meteor: 3.2, gust: 7, star: 0.35, bonus: 0.05 },
 ];
 let gameMode = (() => { try { const m = localStorage.getItem('ori-game-mode'); return m === 'jump' || m === 'fall' ? m : 'fall'; } catch { return 'fall'; } })();
 { const q = new URLSearchParams(location.search).get('game'); if (q === 'jump' || q === 'fall') gameMode = q; }
@@ -905,19 +916,25 @@ function setGameMode(m) {
 }
 document.querySelectorAll('.gmode button').forEach((b) => b.addEventListener('click', () => setGameMode(b.dataset.mode)));
 setGameMode(gameMode);
-const gScore = $('#gScore');
+const gScore = $('#gScore'), gAlt = $('#gAlt'), gAltFill = $('#gAltFill'), gAltMe = $('#gAltMe'), gAltStar = $('#gAltStar');
 function updateScore() {
   if (!gScore) return;
   if (game.mode !== 'jump') { gScore.innerHTML = ''; return; }
-  const lives = '●'.repeat(Math.max(0, game.lives)) + '○'.repeat(Math.max(0, JUMP.lives - game.lives));
-  gScore.innerHTML = `${fmtScore(Math.floor(game.best || 0))} м<span>${lives}</span>`;
+  gScore.innerHTML = `${fmtScore(Math.floor(game.best || 0))} м<span>★ ${game.bank}</span>`;
+  const f = THREE.MathUtils.clamp((game.alt || 0) / JUMP.goal, 0, 1), fb = THREE.MathUtils.clamp((game.best || 0) / JUMP.goal, 0, 1);
+  gAltFill.style.transform = `scaleY(${fb})`; gAltMe.style.bottom = `${f * 100}%`;
+  gAltStar.classList.toggle('got', !!game.dayStar);
+}
+function setSeries() {
+  const g = game, n = g.series;
+  gX2.textContent = n >= 3 ? `Идеально ×${n} · звёзды ×2` : n >= 1 ? `Идеально ×${n}` : '';
+  gX2.classList.toggle('on', n >= 1);
 }
 function gPop(text, at, bad) {
   const el = document.createElement('div'); el.className = 'g-pop' + (bad ? ' bad' : ''); el.textContent = text;
   el.style.left = at.x + 'px'; el.style.top = at.y + 'px'; document.body.appendChild(el);
   requestAnimationFrame(() => el.classList.add('go')); setTimeout(() => el.remove(), 900);
 }
-// platform look: soft light planets (brand light greys / lilac), graphite meteorites with red cracks, ice, lime ring
 // planet surfaces: soft bands and craters painted on a canvas; meteorites: graphite with glowing red cracks
 function planetTex(a, b) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 128; const x = c.getContext('2d');
@@ -935,6 +952,23 @@ function crackTex(glow) {
   for (let i = 0; i < 9; i++) { let px = Math.random() * 256, py = Math.random() * 128; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 5; k++) { px += (Math.random() - 0.5) * 50; py += (Math.random() - 0.5) * 30; x.lineTo(px, py); } x.stroke(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
+function spriteTex(draw, size = 128) {
+  const c = document.createElement('canvas'); c.width = c.height = size; draw(c.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const holeTex = spriteTex((x, s) => {
+  const g = x.createRadialGradient(s / 2, s / 2, s * 0.12, s / 2, s / 2, s / 2);
+  g.addColorStop(0, '#000'); g.addColorStop(0.32, '#05060c'); g.addColorStop(0.42, '#7d63d8'); g.addColorStop(0.5, '#D9F38B'); g.addColorStop(0.62, 'rgba(125,99,216,.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.beginPath(); x.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2); x.fill();
+});
+const glowTex = spriteTex((x, s) => { const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0, 'rgba(255,170,90,.9)'); g.addColorStop(0.5, 'rgba(255,60,40,.35)'); g.addColorStop(1, 'rgba(255,0,50,0)'); x.fillStyle = g; x.fillRect(0, 0, s, s); });
+const bubbleTex = spriteTex((x, s) => { x.strokeStyle = 'rgba(217,243,139,.9)'; x.lineWidth = s * 0.03; x.beginPath(); x.arc(s / 2, s / 2, s * 0.45, 0, Math.PI * 2); x.stroke(); const g = x.createRadialGradient(s * 0.38, s * 0.35, 0, s / 2, s / 2, s * 0.45); g.addColorStop(0, 'rgba(255,255,255,.35)'); g.addColorStop(1, 'rgba(217,243,139,.08)'); x.fillStyle = g; x.fill(); });
+const BONUS = { rocket: '🚀', bubble: '🫧', magnet: '🧲' };
+const bonusTex = Object.fromEntries(Object.entries(BONUS).map(([k, e]) => [k, spriteTex((x, s) => {
+  x.fillStyle = 'rgba(29,34,51,.85)'; x.beginPath(); x.arc(s / 2, s / 2, s * 0.46, 0, Math.PI * 2); x.fill();
+  x.strokeStyle = '#D9F38B'; x.lineWidth = s * 0.05; x.stroke();
+  x.font = `${s * 0.5}px system-ui, "Apple Color Emoji", "Segoe UI Emoji"`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(e, s / 2, s / 2 + s * 0.03);
+})]));
 const PLANET_R = 0.38;
 const jumpGeo = { planet: new THREE.SphereGeometry(PLANET_R, 40, 28), rock: new THREE.DodecahedronGeometry(0.42, 0), ring: new THREE.TorusGeometry(0.62, 0.045, 10, 48), belt: new THREE.TorusGeometry(0.66, 0.02, 8, 48) };
 const jumpMat = {
@@ -943,6 +977,7 @@ const jumpMat = {
     ['#e6f7a8', '#a9cf4c'], ['#ffe6a0', '#e0b247'], ['#e4efff', '#a2b3dc']].map(([a, b]) => new THREE.MeshStandardMaterial({ map: planetTex(a, b), roughness: 0.55, metalness: 0.05, emissive: 0x1c2136, emissiveIntensity: 0.25 })),
   rock: new THREE.MeshStandardMaterial({ map: crackTex(false), roughness: 0.95, flatShading: true, emissive: 0xffffff, emissiveMap: crackTex(true), emissiveIntensity: 1.2 }),
   ice: new THREE.MeshStandardMaterial({ color: 0xbfd8ff, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82, emissive: 0x6f9cff, emissiveIntensity: 0.25 }),
+  hot: new THREE.MeshStandardMaterial({ map: planetTex('#ff7a3d', '#e0263a'), emissive: 0xff4a1c, emissiveIntensity: 0.9, roughness: 0.5 }),
   lime: new THREE.MeshStandardMaterial({ color: 0xd9f38b, emissive: 0xd9f38b, emissiveIntensity: 0.55, roughness: 0.4 }),
   belt: new THREE.MeshStandardMaterial({ color: 0xfafafc, roughness: 0.5, transparent: true, opacity: 0.6 }),
 };
@@ -955,7 +990,10 @@ function makePlatform(type, x, y) {
   if (type === 'crumble') { body = new THREE.Mesh(jumpGeo.rock, jumpMat.rock); body.scale.setScalar(0.9); body.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3); }
   else if (type === 'ice') { body = new THREE.Mesh(jumpGeo.planet, jumpMat.ice.clone()); }
   else if (type === 'ground') { body = new THREE.Object3D(); }
-  else {
+  else if (type === 'hot') {
+    body = new THREE.Mesh(jumpGeo.planet, jumpMat.hot);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(1.5); grp.add(glow);
+  } else {
     const mat = type === 'rescue' ? jumpMat.lime : jumpMat.planet[Math.floor(Math.random() * jumpMat.planet.length)];
     body = new THREE.Mesh(jumpGeo.planet, mat); body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
     if (type === 'move') { const b = new THREE.Mesh(jumpGeo.belt, jumpMat.belt); b.rotation.x = Math.PI / 2 - 0.25; grp.add(b); }
@@ -968,26 +1006,44 @@ function makePlatform(type, x, y) {
   game.plats.push(p); return p;
 }
 function removePlatform(i) { const p = game.plats[i]; scene.remove(p.grp); game.plats.splice(i, 1); }
-function jumpLevel() { const k = Math.floor(game.alt / JUMP.levelH); return { idx: Math.min(k, LEVELS.length - 1), extra: Math.max(0, k - (LEVELS.length - 1)) }; }
-// one row = one reachable platform (+ sometimes a trap next to it) + sometimes a star in the gap below
+function jumpLevel(alt = game.alt) { const k = Math.floor(Math.max(0, alt) / JUMP.levelH); return { idx: Math.min(k, LEVELS.length - 1), extra: Math.max(0, k - (LEVELS.length - 1)), n: k }; }
+function jumpStar(x, y) {
+  const sp = makeGameStar('white'); sp.position.set(x, y, 0.15);
+  sp.userData = { kind: 'white', spin: (Math.random() - 0.5) * 2, base: sp.scale.x, age: Math.random() * 6 };
+}
+function jumpBonus(x, y) {
+  const kind = ['rocket', 'bubble', 'magnet'][Math.floor(Math.random() * 3)];
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: bonusTex[kind], transparent: true, depthWrite: false })); sp.scale.setScalar(0.5);
+  sp.position.set(x, y, 0.2); scene.add(sp); game.bonuses.push({ sp, kind, t: Math.random() * 6 });
+}
+function jumpHole(x, y) {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: holeTex, transparent: true, depthWrite: false })); sp.scale.setScalar(1.25);
+  sp.position.set(x, y, -0.05); scene.add(sp); game.holes.push({ sp, near: 9, used: false });
+}
+// one row = one reachable safe platform + optional extras (trap, hot dwarf, black hole, star, power-up)
 function jumpRow() {
-  const g = game, { xm } = jumpBounds(), { idx, extra } = jumpLevel(), L = LEVELS[idx];
+  const g = game, { xm } = jumpBounds(), rowAlt = g.nextY - g.baseY + g.scrolled, { idx, extra } = jumpLevel(rowAlt), L = LEVELS[idx];
   const gap = Math.min(JUMP.maxGap, L.gap[0] + Math.random() * (L.gap[1] - L.gap[0]) + extra * 0.04);
   const y = g.nextY + gap;
-  let x = THREE.MathUtils.clamp(g.lastX + (Math.random() * 2 - 1) * 1.8, -xm, xm);
+  const x = THREE.MathUtils.clamp(g.lastX + (Math.random() * 2 - 1) * 1.8, -xm, xm);
   const r = Math.random();
   const type = r < L.ring ? 'ring' : r < L.ring + L.ice ? 'ice' : r < L.ring + L.ice + L.move ? 'move' : 'planet';
   const p = makePlatform(type, x, y);
   if (type === 'move') p.vx *= 1 + extra * 0.1;
-  if (type !== 'move' && Math.random() < L.crumble * 1.3) {   // the trap: a meteorite at a similar height, away from the real planet (never next to a moving one)
-    let tx = x + (Math.random() < 0.5 ? -1 : 1) * (1.1 + Math.random() * 0.8);
-    if (Math.abs(tx) > xm) tx = x - Math.sign(tx - x) * (1.1 + Math.random() * 0.8);
-    makePlatform('crumble', THREE.MathUtils.clamp(tx, -xm, xm), y + (Math.random() - 0.5) * 0.6);
+  const side = (d) => { let tx = x + (Math.random() < 0.5 ? -1 : 1) * d; if (Math.abs(tx) > xm) tx = x - Math.sign(tx - x) * d; return THREE.MathUtils.clamp(tx, -xm, xm); };
+  let risky = null;
+  if (type !== 'move') {
+    const t = Math.random();
+    if (t < L.crumble) risky = makePlatform('crumble', side(1.1 + Math.random() * 0.8), y + (Math.random() - 0.5) * 0.6);
+    else if (t < L.crumble + L.hot) risky = makePlatform('hot', side(1.1 + Math.random() * 0.8), y + (Math.random() - 0.5) * 0.6);
   }
+  if (Math.random() < L.hole && !g.holeRecent) { jumpHole(side(1.6 + Math.random() * 0.6), y + gap * 0.45); g.holeRecent = 2; } else if (g.holeRecent) g.holeRecent--;
   if (Math.random() < L.star) {
-    const sp = makeGameStar('white'); sp.position.set(THREE.MathUtils.clamp(x + (Math.random() - 0.5) * 1.6, -xm, xm), y - gap * 0.5 + 0.4, 0.15);
-    sp.userData = { kind: 'white', spin: (Math.random() - 0.5) * 2, base: sp.scale.x, age: Math.random() * 6 };
+    // half of the stars hang right above a trap: a tempting risk
+    if (risky && Math.random() < 0.55) jumpStar(risky.grp.position.x, y + 0.75);
+    else jumpStar(THREE.MathUtils.clamp(x + (Math.random() - 0.5) * 1.8, -xm, xm), y - gap * 0.5 + 0.4);
   }
+  if (Math.random() < L.bonus) jumpBonus(THREE.MathUtils.clamp(x + (Math.random() - 0.5) * 1.4, -xm, xm), y + 0.9);
   g.nextY = y; g.lastX = x;
 }
 function spawnJumpMeteor() {
@@ -998,7 +1054,7 @@ function spawnJumpMeteor() {
   g.meteors.push({ sp, ring: null, t: 0, vx: dir * (1.5 + Math.random() * 0.7 + extra * 0.1), vy: -0.2, spin: (Math.random() - 0.5) * 4 });
 }
 function jumpBounce(v, anim = true) {
-  const g = game; g.vy = v; g.air = true;
+  const g = game; g.vy = v; g.slip = 0;
   if (anim) play('leap', { fade: 0.05, speed: v > JUMP.v0 * 1.2 ? 1.0 : 1.35 });
 }
 function jumpScroll(dy) {   // the world moves down instead of the camera moving up
@@ -1006,34 +1062,86 @@ function jumpScroll(dy) {   // the world moves down instead of the camera moving
   for (const p of g.plats) p.grp.position.y -= dy;
   for (const s of g.stars) s.position.y -= dy;
   for (const m of g.meteors) m.sp.position.y -= dy;
+  for (const b of g.bonuses) b.sp.position.y -= dy;
+  for (const h of g.holes) h.sp.position.y -= dy;
   for (const f of fallers) f.position.y -= dy;
-  pivot.position.y -= dy; g.nextY -= dy; g.scrolled += dy;
+  pivot.position.y -= dy; g.nextY -= dy; g.scrolled += dy; g.dayY -= dy;
   starsFar.position.y -= dy * 0.03; starsNear.position.y -= dy * 0.08;
 }
 function jumpStart() {
   const g = game;
-  g.plats = []; g.vy = 0; g.air = false; g.lives = JUMP.lives; g.alt = 0; g.best = 0; g.scrolled = 0; g.level = 0;
-  g.nextY = g.baseY; g.lastX = 0; g.meteorIn = 99;
-  const ground = makePlatform('ground', 0, g.baseY); ground.top = 0;
+  Object.assign(g, { plats: [], bonuses: [], holes: [], vy: 0, slip: 0, alt: 0, best: 0, scrolled: 0, level: 0, bank: JUMP.bank0, rescues: 0, series: 0, bestSeries: 0,
+    dashReady: false, rocket: 0, bubble: false, magnet: 0, wind: 0, windT: 0, gustIn: 99, dayStar: false, dayShine: false, holeRecent: 0, perfects: 0 });
+  g.nextY = g.baseY; g.lastX = 0; g.meteorIn = 99; g.dayY = g.baseY + JUMP.goal; g.dayX = 0;
+  makePlatform('ground', 0, g.baseY);
   const b = jumpBounds(); while (g.nextY < b.top + 2) jumpRow();
-  updateScore();
+  // the star of the day: always visible (as a light at the top) until Ori reaches it
+  const day = makeHeroStar(); scene.add(day); g.day = day;
+  if (!g.bubbleSp) { g.bubbleSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: bubbleTex, transparent: true, depthWrite: false })); g.bubbleSp.scale.setScalar(1.7); }
+  scene.add(g.bubbleSp); g.bubbleSp.visible = false;
+  setSeries(); updateScore();
 }
-function jumpLose() {
+function jumpCleanup() {
   const g = game;
-  g.lives--; updateScore();
+  for (let i = (g.plats || []).length - 1; i >= 0; i--) removePlatform(i);
+  for (const b of g.bonuses || []) scene.remove(b.sp); for (const h of g.holes || []) scene.remove(h.sp);
+  g.bonuses = []; g.holes = [];
+  if (g.day) { scene.remove(g.day); g.day = null; }
+  if (g.bubbleSp) g.bubbleSp.visible = false;
+}
+const rescuePrice = () => JUMP.rescue + 3 * (game.rescues || 0);   // every rescue costs more
+function jumpLose(why) {
+  const g = game;
   try { navigator.vibrate && navigator.vibrate(90); } catch {}
-  if (g.lives <= 0) { gSay('Ори устал — на сегодня хватит прыжков', 1600); g.playing = false; startFinale(); return; }
+  g.series = 0; g.dashReady = false; setSeries();
+  const price = rescuePrice();
+  if (g.bank < price) { gSay(`${why ? why + ' ' : ''}Не хватило звёзд на спасение (нужно ${price} ★)`, 1800); g.playing = false; startFinale(); return; }
+  g.bank -= price; g.rescues++; updateScore();
   const b = jumpBounds(), x = THREE.MathUtils.clamp(pivot.position.x, -b.xm, b.xm);
   const p = makePlatform('rescue', x, b.bot + 1.0);
   pivot.position.set(x, p.grp.position.y + p.top, 0); jumpBounce(JUMP.v0 * 1.15); g.invuln = 1.5;
-  gSay(`Спасательная планета! Жизней: ${g.lives}`, 1400);
+  gPop(`−${price} ★`, toScreen(p.grp.position), true);
+  gSay(`${why ? why + ' ' : ''}Спасение за ${price} ★ · следующее — ${rescuePrice()} ★`, 1600);
 }
+function jumpCollectStar(i) {
+  const g = game, s = g.stars[i], at = toScreen(s.position); removeGameStar(i, true);
+  if (catchLick.action) catchLick.action.reset().setEffectiveWeight(1).play();
+  const n = g.series >= 3 ? 2 : 1; g.bank += n; g.wag = 0.7; g.caught++;
+  gPop(n > 1 ? '+2 ★' : '+1 ★', at); updateScore();
+}
+function jumpLand(p, top) {
+  const g = game, dxp = pivot.position.x - p.grp.position.x;
+  pivot.position.y = top;
+  if (p.type === 'ice' && Math.abs(dxp) > 0.2 && !g.bubble) {   // slippery edge: he slides off
+    g.slip = Math.sign(dxp) * 2.4; p.alive = false; p.gone = 0.001; g.series = 0; setSeries();
+    gSay('Скользко!', 800); return false;
+  }
+  const perfect = Math.abs(dxp) < JUMP.perfect && p.type !== 'ground';
+  if (perfect) {
+    g.series++; g.perfects++; g.bestSeries = Math.max(g.bestSeries, g.series);
+    gPop('Идеально!', toScreen(new THREE.Vector3(pivot.position.x, top + 0.9, 0)));
+    if (g.series % 5 === 0) g.dashNow = true;
+  } else if (p.type !== 'ground') g.series = 0;
+  setSeries();
+  let v = JUMP.v0;
+  if (p.type === 'ring') v = JUMP.v0 * JUMP.boost;
+  if (g.dashNow) {
+    v = Math.max(v, JUMP.v0 * JUMP.dash); g.dashNow = false; gSay('5 идеальных — рывок!', 900);
+    for (let k = 0; k < 14; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(pivot.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.4, Math.sin(a) * 1.2, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); }
+  }
+  if (p.type === 'ring') for (let k = 0; k < 12; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(p.grp.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 1.5, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); }
+  jumpBounce(v);
+  if (p.type === 'ice') { p.alive = false; p.gone = 0.001; }
+  return true;
+}
+function useBubble(what) { const g = game; g.bubble = false; g.bubbleSp.visible = false; gSay(`Пузырь спас от ${what}!`, 900); meteorBurst(pivot.position.clone().add(new THREE.Vector3(0, 0.6, 0.2)), 10, false); }
 function jumpStep(dt) {
   const g = game, b = jumpBounds();
   if (g.invuln > 0) g.invuln -= dt; if (g.wag > 0) g.wag -= dt;
-  // steering: follow the finger with a capped speed
+  // steering: follow the finger with a capped speed (+ wind gusts, + sliding off ice)
   const tx = THREE.MathUtils.clamp(g.targetX, -b.xm, b.xm), dx = tx - pivot.position.x;
   pivot.position.x += Math.sign(dx) * Math.min(Math.abs(dx), JUMP.speed * dt, Math.abs(dx) * 12 * dt);
+  if (g.playing) pivot.position.x = THREE.MathUtils.clamp(pivot.position.x + (g.wind + g.slip) * dt, -b.xm - 0.3, b.xm + 0.3);
   const wantYaw = THREE.MathUtils.clamp(dx * 0.9, -0.7, 0.7);
   let dyw = wantYaw - pivot.rotation.y; dyw = Math.atan2(Math.sin(dyw), Math.cos(dyw)); pivot.rotation.y += dyw * Math.min(1, 8 * dt);
   pivot.rotation.x = 0; pivot.position.z += (0 - pivot.position.z) * 0.12;
@@ -1044,39 +1152,75 @@ function jumpStep(dt) {
     pedestal.position.set(pivot.position.x, g.baseY + 0.005, 0);
     return;
   }
+  const body = pivot.position.clone(); body.y += 0.55;
+  // rocket: steady flight up
+  if (g.rocket > 0) {
+    g.rocket -= dt; g.vy = 9;
+    for (let k = 0; k < 2; k++) { const f = spawnFaller(pivot.position.x + (Math.random() - 0.5) * 0.2, pivot.position.y, 0.2, new THREE.Vector3((Math.random() - 0.5) * 0.6, -2.5, 0), 0.07 + Math.random() * 0.05, 0.4); f.material.color.set(Math.random() < 0.5 ? 0xff0032 : 0xffb347); }
+    if (g.rocket <= 0) { g.vy = 4; }
+  }
   // gravity and landings
-  const y0 = pivot.position.y; g.vy -= JUMP.g * dt; pivot.position.y += g.vy * dt;
-  if (g.vy < 0) {
+  const y0 = pivot.position.y; if (g.rocket <= 0) g.vy -= JUMP.g * dt; pivot.position.y += g.vy * dt;
+  if (g.vy < 0 && g.rocket <= 0) {
     for (const p of g.plats) {
       if (!p.alive) continue;
       const top = p.grp.position.y + p.top;
       if (y0 >= top - 0.02 && pivot.position.y <= top && Math.abs(pivot.position.x - p.grp.position.x) < p.w + 0.28) {
-        if (p.type === 'crumble') {   // a meteorite: breaks under him, he falls through
-          p.alive = false; p.gone = 0.001; meteorBurst(new THREE.Vector3(p.grp.position.x, top, 0.2), 10, true);
+        if (p.type === 'crumble' && !g.bubble) {   // a meteorite: breaks under him, he falls through
+          p.alive = false; p.gone = 0.001; meteorBurst(new THREE.Vector3(p.grp.position.x, top, 0.2), 10, true); g.series = 0; setSeries();
           gSay('Это был метеорит!', 900); try { navigator.vibrate && navigator.vibrate(40); } catch {}
           continue;
         }
-        pivot.position.y = top;
-        if (p.type === 'ring') { jumpBounce(JUMP.v0 * JUMP.boost); for (let k = 0; k < 12; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(p.grp.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 1.5, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); } }
-        else jumpBounce(JUMP.v0);
-        if (p.type === 'ice') { p.alive = false; p.gone = 0.001; }
-        if (p.type === 'ground') { pedestal.visible = true; }
-        break;
+        if (p.type === 'hot' && !g.bubble) {   // a red dwarf: too hot to stand on, pushes him down
+          pivot.position.y = top; g.vy = -3; g.series = 0; g.dashReady = false; setSeries();
+          for (let k = 0; k < 10; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(pivot.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 1.2, 0), 0.06, 0.45); f.material.color.set(Math.random() < 0.5 ? 0xff4a1c : 0xffb347); }
+          gSay('Горячо!', 800); try { navigator.vibrate && navigator.vibrate(40); } catch {}
+          break;
+        }
+        if ((p.type === 'crumble' || p.type === 'hot') && g.bubble) { useBubble(p.type === 'hot' ? 'жара' : 'обломка'); if (p.type === 'crumble') { p.alive = false; p.gone = 0.001; } jumpBounce(JUMP.v0); break; }
+        if (jumpLand(p, top)) break;
       }
     }
   }
+  if (g.slip && g.vy < -1) g.slip *= 0.98;
   // scroll when Ori is in the upper part of the screen
   const line = b.bot + (b.top - b.bot) * 0.42;
   if (pivot.position.y > line) jumpScroll(pivot.position.y - line);
   g.alt = g.scrolled + (pivot.position.y - g.baseY); if (g.alt > g.best) g.best = g.alt;
-  const lvl = jumpLevel().idx + jumpLevel().extra;
-  if (lvl > g.level) { g.level = lvl; const L = LEVELS[Math.min(lvl, LEVELS.length - 1)]; gSay(lvl < LEVELS.length ? `Уровень ${lvl + 1} · ${L.name}` : `Уровень ${lvl + 1} · ещё выше`, 1800); g.meteorIn = Math.min(g.meteorIn, 2); }
+  // levels
+  const lv = jumpLevel();
+  if (lv.n > g.level) {
+    g.level = lv.n; const L = LEVELS[lv.idx];
+    gSay(lv.n < LEVELS.length - 1 ? `Уровень ${lv.n + 1} · ${L.name}` : `Уровень ${lv.n + 1} · ${L.name}${lv.extra ? ' +' + lv.extra : ''}`, 1800);
+    g.meteorIn = Math.min(g.meteorIn, 2); if (L.gust) g.gustIn = Math.min(g.gustIn, 2.5);
+  }
+  // the constellation lights up as he climbs toward the star of the day
+  while (g.lit < g.need && g.alt >= (g.lit + 1) * JUMP.goal / g.need) { const idx = g.lit++; flyToSky(toScreen(body), idx); }
+  // the star of the day
+  if (g.day) {
+    const glowY = Math.min(g.dayY, b.top - 0.35), far = THREE.MathUtils.clamp((g.dayY - b.top) / 40, 0, 1);
+    g.day.position.set(g.dayX, glowY, 0.2); g.day.rotation.z += dt * 1.5;
+    g.day.userData.core.scale.setScalar(THREE.MathUtils.lerp(0.55, 0.22, far)); g.day.userData.glow.scale.setScalar(THREE.MathUtils.lerp(1.3, 0.6, far) * (1 + 0.08 * Math.sin(g.alt)));
+    // near the goal the star drifts toward Ori; at 100 m it lands in his mouth wherever he is
+    if (g.dayY < b.top) { g.dayX += (pivot.position.x - g.dayX) * Math.min(1, 2.5 * dt); }
+    if (g.alt >= JUMP.goal - 0.2 || (g.dayY < b.top - 0.3 && Math.abs(body.x - g.dayX) < 1.0 && Math.abs(body.y - g.dayY) < 0.8)) {
+      g.dayStar = true; g.dayShine = g.rescues === 0;
+      const m = mouthWorld(); scene.remove(g.day); g.day = null;
+      if (catchLick.action) catchLick.action.reset().setEffectiveWeight(1).play();
+      for (let k = 0; k < 30; k++) { const a = Math.random() * Math.PI * 2, r = 1.4 + Math.random() * 1.8; const s = spawnFaller(m.x, m.y, m.z, new THREE.Vector3(Math.cos(a) * r, 0.4 + Math.random() * 1.6, Math.sin(a) * r * 0.5), 0.06 + Math.random() * 0.08, 0.7); s.material.color.set(Math.random() < 0.45 ? 0xd9f38b : 0xffffff); }
+      flash.style.opacity = 0.6; setTimeout(() => { flash.style.opacity = 0; }, 180);
+      while (g.lit < g.need) { const idx = g.lit++; flyToSky(toScreen(m), idx); }
+      gEl.classList.add('done'); g.wag = 3;
+      gSay(g.dayShine ? 'Сияющая звезда дня! Дальше — за рекордом' : 'Звезда дня! Дальше — за рекордом', 2400);
+      updateScore();
+    }
+  }
   updateScore();
-  gBar.style.transform = `scaleX(${THREE.MathUtils.clamp((g.alt % JUMP.levelH) / JUMP.levelH, 0, 1)})`;
   // platforms: move, crumble/melt, recycle; new rows above
   for (let i = g.plats.length - 1; i >= 0; i--) {
     const p = g.plats[i];
     if (p.vx) { p.grp.position.x += p.vx * dt; if (Math.abs(p.grp.position.x) > b.xm) { p.grp.position.x = Math.sign(p.grp.position.x) * b.xm; p.vx = -p.vx; } }
+    if (p.type === 'hot') p.body.rotation.y += dt * 0.6;
     if (p.gone > 0) {
       p.gone += dt;
       if (p.type === 'crumble') { p.grp.position.y -= 3 * p.gone * dt * 10; p.grp.rotation.z += 3 * dt; p.body.scale.multiplyScalar(1 - dt * 1.2); }
@@ -1087,31 +1231,64 @@ function jumpStep(dt) {
     if (p.grp.position.y < b.bot - 1.5 && p.type !== 'ground') removePlatform(i);
   }
   while (g.nextY < b.top + 2) jumpRow();
-  // stars between the planets
-  const body = pivot.position.clone(); body.y += 0.55;
+  // stars (currency); the magnet pulls them in
   for (let i = g.stars.length - 1; i >= 0; i--) {
     const s = g.stars[i], u = s.userData; u.age += dt; s.material.rotation += u.spin * dt; s.scale.setScalar(u.base * (1 + 0.1 * Math.sin(u.age * 5)));
-    if (Math.hypot(s.position.x - body.x, s.position.y - body.y) < 0.55) {
-      const at = toScreen(s.position); removeGameStar(i, true);
-      if (catchLick.action) catchLick.action.reset().setEffectiveWeight(1).play();
-      g.wag = 0.7; g.caught++; gPop('+1 ★', at);
-      if (g.lit < g.need) { const idx = g.lit++; flyToSky(at, idx); if (g.lit >= g.need) gSay('Созвездие собрано! Прыгай выше — за рекордом', 1800); }
-      continue;
-    }
+    if (g.magnet > 0) { const d = body.clone().sub(s.position); d.z = 0; const L2 = d.length(); if (L2 < 3.2) s.position.addScaledVector(d.normalize(), Math.min(L2, 7 * dt)); }
+    if (Math.hypot(s.position.x - body.x, s.position.y - body.y) < 0.55) { jumpCollectStar(i); continue; }
     if (s.position.y < b.bot - 1) removeGameStar(i, false);
   }
-  // meteors
-  const L = LEVELS[jumpLevel().idx];
-  if (L.meteor > 0) { g.meteorIn -= dt; if (g.meteorIn <= 0) { spawnJumpMeteor(); g.meteorIn = L.meteor * Math.pow(0.9, jumpLevel().extra) * (0.7 + Math.random() * 0.6); } }
+  if (g.magnet > 0) g.magnet -= dt;
+  // power-ups
+  for (let i = g.bonuses.length - 1; i >= 0; i--) {
+    const bo = g.bonuses[i]; bo.t += dt; bo.sp.position.y += Math.sin(bo.t * 3) * 0.004;
+    if (Math.hypot(bo.sp.position.x - body.x, bo.sp.position.y - body.y) < 0.6) {
+      const at = toScreen(bo.sp.position); scene.remove(bo.sp); g.bonuses.splice(i, 1);
+      if (bo.kind === 'rocket') { g.rocket = 3; gPop('Ракета!', at); play('leap', { fade: 0.05, speed: 0.6 }); }
+      if (bo.kind === 'bubble') { g.bubble = true; gPop('Пузырь!', at); }
+      if (bo.kind === 'magnet') { g.magnet = 5; gPop('Магнит!', at); }
+      continue;
+    }
+    if (bo.sp.position.y < b.bot - 1) { scene.remove(bo.sp); g.bonuses.splice(i, 1); }
+  }
+  if (g.bubbleSp) { g.bubbleSp.visible = g.bubble; if (g.bubble) g.bubbleSp.position.set(pivot.position.x, pivot.position.y + 0.6, 0.35); }
+  // black holes: pull; a close pass past the edge = boost; the centre = a fall
+  for (let i = g.holes.length - 1; i >= 0; i--) {
+    const h = g.holes[i]; h.sp.material.rotation -= dt * 2;
+    const d = h.sp.position.clone().sub(body); d.z = 0; const L2 = d.length();
+    if (L2 < 2.2 && g.rocket <= 0) { const a = 5.5 / (L2 * L2 + 0.35); pivot.position.x += d.x / L2 * a * dt * 0.35; g.vy += d.y / L2 * a * dt; }
+    h.near = Math.min(h.near, L2);
+    if (L2 < 0.38 && g.rocket <= 0) {
+      scene.remove(h.sp); g.holes.splice(i, 1);
+      if (g.bubble) { useBubble('чёрной дыры'); g.vy = JUMP.v0; continue; }
+      pivot.position.y = b.bot - 1; jumpLose('Чёрная дыра!'); if (!g.playing) return; continue;
+    }
+    if (!h.used && h.near < 0.95 && L2 > 1.3) { h.used = true; g.vy = Math.max(g.vy, 0) + 4.5; gSay('Гравиманёвр!', 800); gPop('Разгон!', toScreen(body)); }
+    if (h.sp.position.y < b.bot - 1.5) { scene.remove(h.sp); g.holes.splice(i, 1); }
+  }
+  // wind gusts (warned by streaks a moment before)
+  const L = LEVELS[lv.idx];
+  if (L.gust) {
+    g.gustIn -= dt;
+    if (g.gustIn <= 0 && g.windT <= 0) { g.windDir = Math.random() < 0.5 ? -1 : 1; g.windT = 2.4; g.gustIn = L.gust * (0.8 + Math.random() * 0.5); gSay(g.windDir > 0 ? 'Ветер вправо →' : '← Ветер влево', 900); }
+  }
+  if (g.windT > 0) {
+    g.windT -= dt; const ramp = Math.min(1, (2.4 - g.windT) / 0.6) * Math.min(1, g.windT / 0.4);
+    g.wind = g.windDir * 2.3 * Math.max(0, ramp);
+    if (Math.random() < 0.8) { const f = spawnFaller(-g.windDir * (b.xm + 1.2), b.bot + Math.random() * (b.top - b.bot), 0.4, new THREE.Vector3(g.windDir * 6, 0, 0), 0.03, 0.6); f.material.color.set(0xdfe7ff); }
+  } else g.wind = 0;
+  // flying meteors
+  if (L.meteor > 0) { g.meteorIn -= dt; if (g.meteorIn <= 0) { spawnJumpMeteor(); g.meteorIn = L.meteor * Math.pow(0.9, lv.extra) * (0.7 + Math.random() * 0.6); } }
   const seg = new THREE.Line3(pivot.position.clone().add(new THREE.Vector3(0, 0.2, 0)), pivot.position.clone().add(new THREE.Vector3(0, 1.0, 0))), cp = new THREE.Vector3();
   for (let i = g.meteors.length - 1; i >= 0; i--) {
     const mt = g.meteors[i]; mt.sp.position.x += mt.vx * dt; mt.sp.position.y += mt.vy * dt; mt.sp.material.rotation += mt.spin * dt;
     if (Math.random() < 0.7) { const f = spawnFaller(mt.sp.position.x - Math.sign(mt.vx) * 0.12, mt.sp.position.y, 0.3, new THREE.Vector3(-mt.vx * 0.3, 0.2, 0), 0.05 + Math.random() * 0.04, 0.35); f.material.color.set(Math.random() < 0.5 ? 0xff0032 : 0x5a6488); }
-    if (!(g.invuln > 0)) {
+    if (!(g.invuln > 0) && g.rocket <= 0) {
       const mp = mt.sp.position.clone(); mp.z = 0; seg.closestPointToPoint(mp, true, cp);
       if (cp.distanceTo(mp) < 0.38) {
         const p = mt.sp.position.clone(); removeMeteor(i); meteorBurst(p, 14, true);
-        g.vy = Math.min(g.vy, -3.5); g.invuln = 1.2; g.hits++;
+        if (g.bubble) { useBubble('метеорита'); continue; }
+        g.vy = Math.min(g.vy, -3.5); g.invuln = 1.2; g.hits++; g.series = 0; g.dashReady = false; setSeries();
         try { navigator.vibrate && navigator.vibrate(80); } catch {}
         gSay('Метеорит сбил Ори!', 1100); continue;
       }
