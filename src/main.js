@@ -27,7 +27,12 @@ const CLIPS = {
   sitDown:    { a: 1070, b: 1098 },
   sit:        { a: 1098, b: 1146, loop: true },
   sitUp:      { a: 1146, b: 1166 },
+  belly:      { a: 1230, b: 1326 },
 };
+// BELLY: on its back the torso spreads under its weight (morph target Flat, same timing as in Blender)
+const flatAt = (f) => { const ss = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+  return f <= 1240 || f >= 1312 ? 0 : f < 1252 ? ss((f - 1240) / 12) : f <= 1300 ? 1 : 1 - ss((f - 1300) / 12); };
+const flatMeshes = [];
 // after this many seconds without any input the dog sits down and stays seated until the next touch
 const SIT_AFTER = 3;
 // panting: an ADDITIVE loop (jaw, tongue, chest, head) laid over idle or sit now and then.
@@ -350,6 +355,7 @@ async function loadModel() {
       setupMaterials(ori);
       ori.traverse((o) => {
         if (o.isBone) { if (o.name === 'head') headBone = o; if (o.name === 'jaw') jawBone = o; if (o.name === 'lidL' || o.name === 'lidR') blink.bones.push(o); if (/^tail[1-5]$/.test(o.name)) tail.bones[+o.name[4] - 1] = o; }
+        if (o.isMesh && o.morphTargetDictionary && o.morphTargetDictionary.Flat !== undefined) flatMeshes.push(o);
         const n = o.name || '';
         if (n === 'LID_L' || n === 'LID_R') { blink.groups.push(o); o.visible = false; }
         if (/^PUPIL_[LR]/.test(n)) eyes.pupils.push({ node: o, side: n[6], base: o.position.clone() });
@@ -1691,6 +1697,11 @@ function tick(_ts, simDt) {
     }
     procUndo();
     mixer.update(dt);
+    if (flatMeshes.length) {
+      const ba = actions.belly, w = ba && ba.isRunning() ? ba.getEffectiveWeight() : 0;
+      const k = w > 0 ? w * flatAt(CLIPS.belly.a + ba.time * FPS) : 0;
+      for (const m of flatMeshes) m.morphTargetInfluences[m.morphTargetDictionary.Flat] = k;
+    }
     if (game.on) gamePose(dt);
     if (holdJaw && jawBone) { const e = new THREE.Euler().setFromQuaternion(jawBone.quaternion, 'XYZ'); if (e.x < JAW_HOLD) { e.x = JAW_HOLD; jawBone.quaternion.setFromEuler(e); } }
     // tail wag on top of the clips
