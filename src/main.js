@@ -1001,7 +1001,7 @@ function makePlatform(type, x, y) {
   grp.add(body);
   if (type === 'ring') { const r = new THREE.Mesh(jumpGeo.ring, jumpMat.lime); r.rotation.x = Math.PI / 2 - 0.35; r.rotation.y = 0.25; grp.add(r); }
   grp.position.set(x, y, 0); scene.add(grp);
-  const p = { grp, body, type, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
+  const p = { grp, body, type, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
   if (type === 'move') p.vx = (Math.random() < 0.5 ? -1 : 1) * (0.7 + Math.random() * 0.6);
   game.plats.push(p); return p;
 }
@@ -1071,7 +1071,7 @@ function jumpScroll(dy) {   // the world moves down instead of the camera moving
 function jumpStart() {
   const g = game;
   Object.assign(g, { plats: [], bonuses: [], holes: [], vy: 0, slip: 0, alt: 0, best: 0, scrolled: 0, level: 0, bank: JUMP.bank0, rescues: 0, series: 0, bestSeries: 0,
-    dashReady: false, rocket: 0, bubble: false, magnet: 0, wind: 0, windT: 0, gustIn: 99, dayStar: false, dayShine: false, holeRecent: 0, perfects: 0 });
+    dashReady: false, face: Math.random() < 0.5 ? -1 : 1, spinT: 0, rocket: 0, bubble: false, magnet: 0, wind: 0, windT: 0, gustIn: 99, dayStar: false, dayShine: false, holeRecent: 0, perfects: 0 });
   g.nextY = g.baseY; g.lastX = 0; g.meteorIn = 99; g.dayY = g.baseY + JUMP.goal; g.dayX = 0;
   makePlatform('ground', 0, g.baseY);
   const b = jumpBounds(); while (g.nextY < b.top + 2) jumpRow();
@@ -1097,8 +1097,13 @@ function jumpLose(why) {
   const price = rescuePrice();
   if (g.bank < price) { gSay(`${why ? why + ' ' : ''}Не хватило звёзд на спасение (нужно ${price} ★)`, 1800); g.playing = false; startFinale(); return; }
   g.bank -= price; g.rescues++; updateScore();
-  const b = jumpBounds(), x = THREE.MathUtils.clamp(pivot.position.x, -b.xm, b.xm);
-  const p = makePlatform('rescue', x, b.bot + 1.0);
+  const b = jumpBounds(), y = b.bot + 1.0;
+  // the rescue planet goes where nothing nasty hangs right above it (a hot dwarf there made an endless loop)
+  const blocked = (x) => g.plats.some((q) => q.alive && (q.type === 'hot' || q.type === 'crumble') && Math.abs(q.grp.position.x - x) < 1.0 && q.grp.position.y > y && q.grp.position.y < y + 3.6)
+    || g.holes.some((h) => Math.abs(h.sp.position.x - x) < 1.3 && h.sp.position.y > y && h.sp.position.y < y + 4);
+  let x = THREE.MathUtils.clamp(pivot.position.x, -b.xm, b.xm);
+  if (blocked(x)) { let best = null; for (let c = -b.xm; c <= b.xm + 1e-6; c += 0.25) if (!blocked(c) && (best === null || Math.abs(c - x) < Math.abs(best - x))) best = c; if (best !== null) x = best; }
+  const p = makePlatform('rescue', x, y);
   pivot.position.set(x, p.grp.position.y + p.top, 0); jumpBounce(JUMP.v0 * 1.15); g.invuln = 1.5;
   gPop(`−${price} ★`, toScreen(p.grp.position), true);
   gSay(`${why ? why + ' ' : ''}Спасение за ${price} ★ · следующее — ${rescuePrice()} ★`, 1600);
@@ -1126,11 +1131,13 @@ function jumpLand(p, top) {
   let v = JUMP.v0;
   if (p.type === 'ring') v = JUMP.v0 * JUMP.boost;
   if (g.dashNow) {
-    v = Math.max(v, JUMP.v0 * JUMP.dash); g.dashNow = false; gSay('5 идеальных — рывок!', 900);
+    v = Math.max(v, JUMP.v0 * JUMP.dash); g.dashNow = false; g.spinT = 0.7; gSay('5 идеальных — рывок!', 900);
     for (let k = 0; k < 14; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(pivot.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.4, Math.sin(a) * 1.2, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); }
   }
   if (p.type === 'ring') for (let k = 0; k < 12; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(p.grp.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 1.5, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); }
   jumpBounce(v);
+  // bouncing in place: now and then he turns to look the other way
+  if (Math.abs(g.targetX - pivot.position.x) < 0.15 && Math.random() < 0.4) g.face = -(g.face || 1);
   if (p.type === 'ice') { p.alive = false; p.gone = 0.001; }
   return true;
 }
@@ -1142,8 +1149,10 @@ function jumpStep(dt) {
   const tx = THREE.MathUtils.clamp(g.targetX, -b.xm, b.xm), dx = tx - pivot.position.x;
   pivot.position.x += Math.sign(dx) * Math.min(Math.abs(dx), JUMP.speed * dt, Math.abs(dx) * 12 * dt);
   if (g.playing) pivot.position.x = THREE.MathUtils.clamp(pivot.position.x + (g.wind + g.slip) * dt, -b.xm - 0.3, b.xm + 0.3);
-  const wantYaw = THREE.MathUtils.clamp(dx * 0.9, -0.7, 0.7);
-  let dyw = wantYaw - pivot.rotation.y; dyw = Math.atan2(Math.sin(dyw), Math.cos(dyw)); pivot.rotation.y += dyw * Math.min(1, 8 * dt);
+  if (Math.abs(dx) > 0.15) g.face = Math.sign(dx);
+  let wantYaw = !g.playing || g.rocket > 0 ? 0 : (g.face || 1) * (Math.abs(dx) > 0.15 ? 0.8 : 0.5);
+  if (g.spinT > 0) { g.spinT -= dt; wantYaw += (1 - g.spinT / 0.7) * Math.PI * 2 * (g.face || 1); pivot.rotation.y = wantYaw; }
+  else { pivot.rotation.y = Math.atan2(Math.sin(pivot.rotation.y), Math.cos(pivot.rotation.y)); let dyw = wantYaw - pivot.rotation.y; dyw = Math.atan2(Math.sin(dyw), Math.cos(dyw)); pivot.rotation.y += dyw * Math.min(1, 7 * dt); }
   pivot.rotation.x = 0; pivot.position.z += (0 - pivot.position.z) * 0.12;
   if (!g.playing) {
     // before the start / after the run: stand (or drop) onto the pedestal
@@ -1219,12 +1228,21 @@ function jumpStep(dt) {
   // platforms: move, crumble/melt, recycle; new rows above
   for (let i = g.plats.length - 1; i >= 0; i--) {
     const p = g.plats[i];
-    if (p.vx) { p.grp.position.x += p.vx * dt; if (Math.abs(p.grp.position.x) > b.xm) { p.grp.position.x = Math.sign(p.grp.position.x) * b.xm; p.vx = -p.vx; } }
+    if (p.vx) {   // a moving planet swings around its own spot, so the next planet stays within reach
+      p.grp.position.x += p.vx * dt;
+      if (Math.abs(p.grp.position.x) > b.xm || Math.abs(p.grp.position.x - p.x0) > 1.1) { p.grp.position.x = THREE.MathUtils.clamp(THREE.MathUtils.clamp(p.grp.position.x, p.x0 - 1.1, p.x0 + 1.1), -b.xm, b.xm); p.vx = -p.vx; }
+    }
     if (p.type === 'hot') p.body.rotation.y += dt * 0.6;
     if (p.gone > 0) {
       p.gone += dt;
       if (p.type === 'crumble') { p.grp.position.y -= 3 * p.gone * dt * 10; p.grp.rotation.z += 3 * dt; p.body.scale.multiplyScalar(1 - dt * 1.2); }
       else { p.body.material.opacity = Math.max(0, 0.82 - p.gone * 2.2); p.body.scale.multiplyScalar(1 - dt * 1.5); }
+      // an ice comet freezes back after a while, so the way up never disappears for good
+      if (p.type === 'ice' && p.gone > 0.7) {
+        p.body.visible = false;
+        if (p.gone > 2.6) { p.gone = 0; p.alive = true; p.body.visible = true; p.body.scale.setScalar(1); p.body.material.opacity = 0.82; meteorBurst(new THREE.Vector3(p.grp.position.x, p.grp.position.y, 0.2), 6, false); }
+        continue;
+      }
       if (p.gone > 0.7) { removePlatform(i); continue; }
     }
     if (p.type === 'ground') { pedestal.position.set(p.grp.position.x, p.grp.position.y + 0.005, 0); pedestal.visible = p.grp.position.y > b.bot - 1; }
@@ -1256,7 +1274,7 @@ function jumpStep(dt) {
   for (let i = g.holes.length - 1; i >= 0; i--) {
     const h = g.holes[i]; h.sp.material.rotation -= dt * 2;
     const d = h.sp.position.clone().sub(body); d.z = 0; const L2 = d.length();
-    if (L2 < 2.2 && g.rocket <= 0) { const a = 5.5 / (L2 * L2 + 0.35); pivot.position.x += d.x / L2 * a * dt * 0.35; g.vy += d.y / L2 * a * dt; }
+    if (L2 < 1.8 && g.rocket <= 0) { const a = 4.2 / (L2 * L2 + 0.35); pivot.position.x += d.x / L2 * a * dt * 0.35; g.vy += d.y / L2 * a * dt; }
     h.near = Math.min(h.near, L2);
     if (L2 < 0.38 && g.rocket <= 0) {
       scene.remove(h.sp); g.holes.splice(i, 1);
