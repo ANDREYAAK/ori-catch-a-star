@@ -46,7 +46,7 @@ const train = $('#train');
 
 function showScreen(id) {
   for (const k in screens) screens[k].classList.toggle('show', k === id);
-  document.body.classList.toggle('card', id === 's3');
+  document.body.classList.toggle('on-card', id === 's3');   // not 'card': that class styles the star card itself
 }
 
 /* ---------- renderer / scene ---------- */
@@ -509,6 +509,8 @@ function constellationOfDay() {
 const gEl = $('#game'), gSky = $('#gSky'), gBar = $('#gBar'), gHint = $('#gHint'), gName = $('#gName'), gX2 = $('#gX2');
 const game = { on: false };
 const _gRay = new THREE.Raycaster(), _gPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), _gNdc = new THREE.Vector2();
+// on a wide screen the game stays inside the central column (the UI is 440 px wide), not across the whole monitor
+function playNdc(f) { const w = canvas.clientWidth || innerWidth; return Math.min(f, f * 250 / (w / 2)); }
 function ndcToPlane(nx, ny, z = 0) {
   _gPlane.constant = -z; _gNdc.set(nx, ny); _gRay.setFromCamera(_gNdc, camera);
   const p = new THREE.Vector3(); return _gRay.ray.intersectPlane(_gPlane, p) ? p : new THREE.Vector3();
@@ -566,7 +568,7 @@ function unlightUnit(idx) {
 }
 function setX2(on) { game.x2 = on; gX2.classList.toggle('on', on); }
 function spawnMeteor(aim) {
-  const g = game, xm = Math.abs(ndcToPlane(0.7, 0, STAR_Z).x), top = ndcToPlane(0, 1.08, STAR_Z);
+  const g = game, xm = Math.abs(ndcToPlane(playNdc(0.7), 0, STAR_Z).x), top = ndcToPlane(0, 1.08, STAR_Z);
   let x = aim ? pivot.position.x + (Math.random() - 0.5) * 0.3 : (Math.random() * 2 - 1) * xm;
   x = THREE.MathUtils.clamp(x, -xm, xm);
   const land = g.baseY + 0.08;
@@ -606,7 +608,7 @@ function makeGameStar(kind) {
 }
 function spawnStar() {
   const blue = game.t > 3 && Math.random() < 0.22, kind = blue ? 'blue' : 'white';
-  const top = ndcToPlane(0, 1.06, STAR_Z), xm = Math.abs(ndcToPlane(0.8, 0, STAR_Z).x);
+  const top = ndcToPlane(0, 1.06, STAR_Z), xm = Math.abs(ndcToPlane(playNdc(0.8), 0, STAR_Z).x);
   const sp = makeGameStar(kind);
   // stars appear away from where Ori stands, so catching them takes a run
   let x = 0, dogX = pivot ? pivot.position.x : 0;
@@ -819,7 +821,7 @@ function gameStep(dt) {
   const g = game;
   if (g.heroPhase && g.hero) { heroStep(dt); pedestal.position.set(pivot.position.x, g.baseY + 0.005, pivot.position.z); return; }
   if (g.mode === 'jump') { jumpStep(dt); return; }
-  const xm = Math.abs(ndcToPlane(0.78, -0.3, 0).x);
+  const xm = Math.abs(ndcToPlane(playNdc(0.78), -0.3, 0).x);
   const tx = THREE.MathUtils.clamp(g.targetX, -xm, xm), dx = tx - pivot.position.x;
   if (g.stun > 0) g.stun -= dt; if (g.invuln > 0) g.invuln -= dt; if (g.wag > 0) g.wag -= dt;
   const moving = Math.abs(dx) > 0.05 && !g.leap && !g.lockAnim && !(g.stun > 0);
@@ -982,7 +984,7 @@ const jumpMat = {
   belt: new THREE.MeshStandardMaterial({ color: 0xfafafc, roughness: 0.5, transparent: true, opacity: 0.6 }),
 };
 function jumpBounds() {
-  const top = ndcToPlane(0, 1, 0).y, bot = ndcToPlane(0, -1, 0).y, xm = Math.abs(ndcToPlane(0.82, 0, 0).x) - 0.35;
+  const top = ndcToPlane(0, 1, 0).y, bot = ndcToPlane(0, -1, 0).y, xm = Math.abs(ndcToPlane(playNdc(0.82), 0, 0).x) - 0.35;
   return { top, bot, xm };
 }
 function makePlatform(type, x, y) {
@@ -1765,15 +1767,34 @@ function toast(msg) { hint.textContent = msg; hint.style.opacity = 1; setTimeout
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------- resize ---------- */
+// size the drawing buffer from the canvas' real box (not the window), so the picture can never be stretched,
+// and keep the pixel count within a budget: a 4K monitor at DPR 2 is ~16 MP per frame for this material
+const PIXEL_BUDGET = isMobile ? 2.2e6 : 3.2e6;
+let qualityScale = 1;
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  const w = canvas.clientWidth || innerWidth, h = canvas.clientHeight || innerHeight;
+  const dpr = Math.min(devicePixelRatio || 1, isMobile ? 1.5 : 2, Math.sqrt(PIXEL_BUDGET / (w * h))) * qualityScale;
+  renderer.setPixelRatio(Math.max(0.75, dpr));
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
+if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+// adaptive quality: if frames get slow for a couple of seconds, render fewer pixels (and back up when it is smooth)
+const perf = { acc: 0, n: 0, t: 0 };
+function watchPerf(dt) {
+  perf.acc += dt; perf.n++; perf.t += dt;
+  if (perf.t < 2) return;
+  const avg = perf.acc / perf.n; perf.acc = perf.n = perf.t = 0;
+  const prev = qualityScale;
+  if (avg > 1 / 45 && qualityScale > 0.55) qualityScale = Math.max(0.55, qualityScale - 0.15);
+  else if (avg < 1 / 58 && qualityScale < 1) qualityScale = Math.min(1, qualityScale + 0.1);
+  if (qualityScale !== prev) resize();
+}
 
 /* ---------- loop ---------- */
 function tick(_ts, simDt) {
   const dt = simDt !== undefined ? simDt : Math.min(clock.getDelta(), 0.05);
+  if (simDt === undefined && document.visibilityState === 'visible') watchPerf(dt);
   const t = clock.elapsedTime;
   starsFar.material.uniforms.uTime.value = t; starsNear.material.uniforms.uTime.value = t;
   starsFar.rotation.z = t * 0.004; starsNear.rotation.z = -t * 0.006;
