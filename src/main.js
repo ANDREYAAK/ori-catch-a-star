@@ -343,7 +343,7 @@ function play(name, { fade = 0.25, onDone, speed = 1 } = {}) {
 }
 
 async function loadModel() {
-  const buf = window.ORI_GLB ? decodeGLB(window.ORI_GLB) : await (await fetch('assets/ori.glb')).arrayBuffer();
+  const buf = window.ORI_GLB ? decodeGLB(window.ORI_GLB) : await (await fetch('assets/ori.glb' + (window.ORI_GLB_V ? '?v=' + window.ORI_GLB_V : ''))).arrayBuffer();   // versioned: a new model is never served from an old cache
   return new Promise((resolve, reject) => {
     const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
     loader.parse(buf, '', (gltf) => {

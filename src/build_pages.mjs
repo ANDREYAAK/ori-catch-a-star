@@ -14,7 +14,9 @@ writeFileSync('pages/assets/bundle.js', js);
 const rep = { __F_WIDE500__: 'assets/MTSWide-500.woff2', __F_WIDE700__: 'assets/MTSWide-700.woff2', __F_TEXT400__: 'assets/MTSText-400.woff2', __F_TEXT500__: 'assets/MTSText-500.woff2', __F_COMP400__: 'assets/MTSCompact-400.woff2', __LOGO_DENGI__: 'assets/logo-dengi.svg', __LOGO_MTS__: 'assets/logo-mts.png', __FAVICON__: 'assets/favicon.svg', __GLB__: '', __PHRASES__: readFileSync('phrases.json','utf8') };
 let html = readFileSync('index.html', 'utf8');
 for (const [k, v] of Object.entries(rep)) html = html.replace(k, () => v);
-html = html.replace('<script>__BUNDLE__</script>', '<script src="assets/bundle.js?v=' + Date.now() + '"></script>');
+// the model URL carries a content hash, so a new model is picked up at once (GitHub Pages caches files for 10 min)
+const glbHash = (await import('node:crypto')).createHash('md5').update(readFileSync('pages/assets/ori.glb')).digest('hex').slice(0, 10);
+html = html.replace('<script>__BUNDLE__</script>', '<script>window.ORI_GLB_V="' + glbHash + '"</script><script src="assets/bundle.js?v=' + Date.now() + '"></script>');
 writeFileSync('pages/index.html', html);
 writeFileSync('pages/.nojekyll', '');
 console.log('pages/ ready');
