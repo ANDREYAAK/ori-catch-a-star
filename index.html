@@ -59,9 +59,9 @@ body.card #gbar .gpill{display:block}
 body.gaming #gbar{display:none}
 .g-score{display:none;font:500 28px/1.1 'MTS Wide';color:var(--ink);margin-bottom:4px;text-shadow:0 2px 12px rgba(0,0,0,.5)}
 .g-score span{font:400 13px/1 'MTS Text';color:var(--ink-dim);margin-left:10px;vertical-align:middle}
-#game.tap .g-score{display:block}
-#game.tap #gSky{width:min(46vw,200px)}
-#game.tap .g-name{font-size:11px;margin-bottom:2px}
+#game.jump .g-score{display:block}
+#game.jump #gSky{width:min(46vw,200px)}
+#game.jump .g-name{font-size:11px;margin-bottom:2px}
 .g-pop{position:fixed;transform:translate(-50%,0);font:500 16px/1 'MTS Wide';color:#fff;text-shadow:0 0 8px rgba(217,243,139,.9);pointer-events:none;z-index:8;transition:transform .85s cubic-bezier(.2,.7,.3,1),opacity .85s}
 .g-pop.bad{color:#FF0032;text-shadow:0 0 8px rgba(255,0,50,.6)}
 .g-pop.go{transform:translate(-50%,-46px);opacity:0}
@@ -137,7 +137,7 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
     <img class="brandbar__mts" src="assets/logo-mts.png" alt="МТС">
   </header>
   <button id="trainToggle" title="Команды" aria-label="Команды">⋯</button>
-  <div id="gbar"><div class="gmode"><button data-mode="fall">Звездопад</button><button data-mode="tap">Звёздный тап<small class="g-rec"></small></button></div><button class="gpill" id="again">Ещё раз</button></div>
+  <div id="gbar"><div class="gmode"><button data-mode="fall">Звездопад</button><button data-mode="jump">Прыжки<small class="g-rec"></small></button></div><button class="gpill" id="again">Ещё раз</button></div>
   <div id="train">
     <button data-cmd="walk">Гулять</button>
     <button data-cmd="lick">Лизнуть</button>
@@ -401,6 +401,6 @@ body.gaming #trainToggle,body.gaming #train{display:none!important}
   ]
 }
 ;</script>
-<script src="assets/bundle.js?v=1790203281121"></script>
+<script src="assets/bundle.js?v=1790231121328"></script>
 </body>
 </html>
