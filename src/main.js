@@ -806,7 +806,7 @@ function gameStep(dt) {
 // down, side gusts) → Чёрные дыры (pull him in; skimming past the edge gives a boost) → Глубокий космос (all
 // mixed, harder every 20 m). Rare power-ups: rocket (3 s of flight), bubble (saves once), magnet (5 s).
 // Every row has one reachable safe platform; traps and hazards are extras.
-const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 20, goal: 100, maxGap: 2.1, speed: 5, rescue: 5, bank0: 5, perfect: 0.13 };
+const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 20, goal: 100, maxGap: 2.1, speed: 3.6, rescue: 5, weak: 0.72, orbitEvery: [3, 4], bank0: 5, perfect: 0.13 };
 const LEVELS = [
   { name: 'Орбита', gap: [1.2, 1.6], move: 0, ice: 0, ring: 0.1, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, star: 0.45, bonus: 0.03 },
   { name: 'Пояс астероидов', gap: [1.4, 1.8], move: 0.3, ice: 0, ring: 0.08, crumble: 0.35, hot: 0, hole: 0, meteor: 5, gust: 0, star: 0.4, bonus: 0.045 },
@@ -916,9 +916,14 @@ function makePlatform(type, x, y) {
   } else {
     const mat = type === 'rescue' ? jumpMat.lime : jumpMat.planet[Math.floor(Math.random() * jumpMat.planet.length)];
     body = new THREE.Mesh(jumpGeo.planet, mat); body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
-    if (type === 'move') { const b = new THREE.Mesh(jumpGeo.belt, jumpMat.belt); b.rotation.x = Math.PI / 2 - 0.25; grp.add(b); }
+    if (type === 'move' || type === 'orbit') { const b = new THREE.Mesh(jumpGeo.belt, jumpMat.belt); b.rotation.x = Math.PI / 2 - 0.25; grp.add(b); }
   }
   grp.add(body);
+  if (type === 'orbit') {
+    const xm = jumpBounds().xm + PLANET_R, pts = []; for (let i = 0; i <= 40; i++) pts.push(new THREE.Vector3(-xm + i * 2 * xm / 40, 0, -0.1));
+    const track = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color: 0xfafafc, transparent: true, opacity: 0.28, dashSize: 0.12, gapSize: 0.1 }));
+    track.computeLineDistances(); track.position.set(-x, 0, 0); grp.add(track);
+  }
   if (type === 'ring') { const r = new THREE.Mesh(jumpGeo.ring, jumpMat.lime); r.rotation.x = Math.PI / 2 - 0.35; r.rotation.y = 0.25; grp.add(r); }
   grp.position.set(x, y, 0); scene.add(grp);
   const p = { grp, body, type, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
@@ -952,13 +957,17 @@ function jumpRow() {
   const y = g.nextY + gap;
   const x = THREE.MathUtils.clamp(g.lastX + (Math.random() * 2 - 1) * 1.8, -xm, xm);
   const r = Math.random();
-  const type = r < L.ring ? 'ring' : r < L.ring + L.ice ? 'ice' : r < L.ring + L.ice + L.move ? 'move' : 'planet';
+  let type = r < L.ring ? 'ring' : r < L.ring + L.ice ? 'ice' : r < L.ring + L.ice + L.move ? 'move' : 'planet';
+  // from level 2 every third or fourth row is an orbit: its only planet crosses the whole screen, you wait for it
+  g.rowN++;
+  if (idx >= 1 && --g.orbitIn <= 0) { type = 'orbit'; g.orbitIn = JUMP.orbitEvery[0] + Math.floor(Math.random() * (JUMP.orbitEvery[1] - JUMP.orbitEvery[0] + 1)); }
   const p = makePlatform(type, x, y);
   if (type === 'move') p.vx *= 1 + extra * 0.1;
+  if (type === 'orbit') { p.vx = (Math.random() < 0.5 ? -1 : 1) * (1.1 + 0.2 * Math.min(idx, 4) + extra * 0.1); p.orbitAnnounce = true; }
   const side = (d) => { let tx = x + (Math.random() < 0.5 ? -1 : 1) * d; if (Math.abs(tx) > xm) tx = x - Math.sign(tx - x) * d; return THREE.MathUtils.clamp(tx, -xm, xm); };
   let risky = null;
   // a spot is free when no planet (or a moving planet's whole swing) comes within a planet's width of it
-  const free = (px, py) => g.plats.every((q) => q.type === 'ground' || Math.hypot(Math.max(0, Math.abs(px - q.x0) - (q.vx ? 1.1 : 0)), py - q.grp.position.y) > 1.0);
+  const free = (px, py) => g.plats.every((q) => q.type === 'ground' || Math.hypot(Math.max(0, Math.abs(px - q.x0) - (q.type === 'orbit' ? 99 : q.vx ? 1.1 : 0)), py - q.grp.position.y) > 1.0);
   if (type !== 'move') {
     const t = Math.random(), rtype = t < L.crumble ? 'crumble' : t < L.crumble + L.hot ? 'hot' : null;
     if (rtype) for (let k = 0; k < 6 && !risky; k++) { const rx = side(1.15 + Math.random() * 0.8), ry = y + (Math.random() - 0.5) * 0.6; if (free(rx, ry)) risky = makePlatform(rtype, rx, ry); }
@@ -1003,7 +1012,7 @@ function jumpStart() {
   const g = game;
   Object.assign(g, { plats: [], bonuses: [], holes: [], vy: 0, slip: 0, alt: 0, best: 0, scrolled: 0, level: 0, bank: JUMP.bank0, rescues: 0, series: 0, bestSeries: 0,
     dashReady: false, face: Math.random() < 0.5 ? -1 : 1, spinT: 0, rocket: 0, bubble: false, magnet: 0, wind: 0, windT: 0, gustIn: 99, dayStar: false, dayShine: false, holeRecent: 0, perfects: 0,
-    mult: 1, clean: 0, knock: 0, knockV: 0, scald: 0, vx: 0, cashed: false });
+    mult: 1, clean: 0, knock: 0, knockV: 0, scald: 0, vx: 0, cashed: false, rowN: 0, orbitIn: 3, orbitSeen: 0, weakSeen: false });
   g.nextY = g.baseY; g.lastX = 0; g.meteorIn = 99; g.dayY = g.baseY + JUMP.goal; g.dayX = 0;
   makePlatform('ground', 0, g.baseY);
   const b = jumpBounds(); while (g.nextY < b.top + 2) jumpRow();
@@ -1074,14 +1083,19 @@ function jumpLand(p, top) {
     } else gSay('Лёд раскололся!', 800);
   }
   const perfect = Math.abs(dxp) < JUMP.perfect && p.type !== 'ground';
-  if (p.type !== 'ground' && p.type !== 'rescue') multClean();
+  // precision: the centre gives the full bounce, the edge a weak one (from level 2) that will not reach the next row
+  const edge = THREE.MathUtils.smoothstep(Math.abs(dxp) / (p.w + 0.28), 0.4, 1);
+  const weak = jumpLevel().n >= 1 && p.type !== 'ground' && p.type !== 'rescue' && p.type !== 'ring' ? edge : 0;
+  if (weak > 0.5 && !g.weakSeen) { g.weakSeen = true; gSay('С края отскок слабее — целься в центр планеты', 1600); }
+  if (p.type !== 'ground' && p.type !== 'rescue' && weak < 0.5 && g.lastPlat !== p) multClean();   // bouncing in place does not count
+  g.lastPlat = p;
   if (perfect) {
     g.series++; g.perfects++; g.bestSeries = Math.max(g.bestSeries, g.series);
     gPop('Идеально!', toScreen(new THREE.Vector3(pivot.position.x, top + 0.9, 0)));
     if (g.series % 5 === 0) g.dashNow = true;
   } else if (p.type !== 'ground') g.series = 0;
   setSeries();
-  let v = JUMP.v0;
+  let v = JUMP.v0 * THREE.MathUtils.lerp(1, JUMP.weak, weak);
   if (p.type === 'ring') v = JUMP.v0 * JUMP.boost;
   g.squash = 1; g.earV += 4;   // landing: a short squash, the ears swing on past their rest, then the stretch of the push-off
   if (g.dashNow) {
@@ -1201,7 +1215,10 @@ function jumpStep(dt) {
     const p = g.plats[i];
     if (p.vx) {   // a moving planet swings around its own spot, so the next planet stays within reach
       p.grp.position.x += p.vx * dt;
-      if (Math.abs(p.grp.position.x) > b.xm || Math.abs(p.grp.position.x - p.x0) > 1.1) { p.grp.position.x = THREE.MathUtils.clamp(THREE.MathUtils.clamp(p.grp.position.x, p.x0 - 1.1, p.x0 + 1.1), -b.xm, b.xm); p.vx = -p.vx; }
+      const lim = p.type === 'orbit' ? 99 : 1.1;
+      if (Math.abs(p.grp.position.x) > b.xm || Math.abs(p.grp.position.x - p.x0) > lim) { p.grp.position.x = THREE.MathUtils.clamp(THREE.MathUtils.clamp(p.grp.position.x, p.x0 - lim, p.x0 + lim), -b.xm, b.xm); p.vx = -p.vx; }
+      // the first orbits get a word of explanation when they come into view
+      if (p.orbitAnnounce && p.grp.position.y < b.top - 0.5 && p.grp.position.y > pivot.position.y) { p.orbitAnnounce = false; if (g.orbitSeen++ < 2) gSay('Планета ходит через весь экран — дождись её', 1700); }
     }
     if (p.type === 'hot') { p.body.rotation.y += dt * 0.6; if (p.steam > 0) { p.steam -= dt; for (let k = 0, n = emit(6, dt); k < n; k++) { const f = spawnFaller(p.grp.position.x + (Math.random() - 0.5) * 0.6, p.grp.position.y + 0.3, 0.3, new THREE.Vector3((Math.random() - 0.5) * 0.3, 1.2 + Math.random(), 0), 0.07, 0.6); f.material.color.set(0xffd7c2); } } }
     if (p.gone > 0) {
