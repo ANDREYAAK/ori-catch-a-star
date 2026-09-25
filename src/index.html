@@ -56,6 +56,9 @@ body.on-card #gbar .gpill{display:block}
 body.gaming #gbar{display:none}
 #gQuit{position:fixed;left:18px;top:calc(12px + env(safe-area-inset-top) + 44px);z-index:6;width:34px;height:34px;border-radius:50%;border:1px solid var(--pill-line);background:var(--pill);color:var(--ink);font:500 16px/1 'MTS Text';cursor:pointer;display:none;align-items:center;justify-content:center;pointer-events:auto}
 body.gaming #gQuit{display:flex}
+#gCash{position:fixed;right:18px;top:calc(12px + env(safe-area-inset-top) + 44px);z-index:6;border:1px solid rgba(217,243,139,.7);background:rgba(29,34,51,.85);color:var(--mts-lime);font:500 13px/1 'MTS Text';padding:9px 12px;border-radius:17px;cursor:pointer;display:none;pointer-events:auto;box-shadow:0 0 14px rgba(217,243,139,.25)}
+#gCash.on{display:block;animation:cashPulse 1.6s ease-in-out infinite}
+@keyframes cashPulse{50%{box-shadow:0 0 22px rgba(217,243,139,.55)}}
 .g-score{display:none;font:500 28px/1.1 'MTS Wide';color:var(--ink);margin-bottom:4px;text-shadow:0 2px 12px rgba(0,0,0,.5)}
 .g-score span{font:400 13px/1 'MTS Text';color:var(--ink-dim);margin-left:10px;vertical-align:middle}
 #game.jump .g-score{display:block}
@@ -159,6 +162,7 @@ body.gaming #trainToggle{display:none!important}
   </header>
   <button id="trainToggle" title="Сбросить день" aria-label="Сбросить день">↺</button>
   <button id="gQuit" aria-label="Выйти из игры" title="Выйти">✕</button>
+  <button id="gCash" title="Закончить забег и забрать все звёзды">Забрать ★</button>
   <div id="gbar"><div class="g-recchip">Рекорд прыжков <b class="g-rec"></b></div><button class="gpill" id="again">Ещё раз</button></div>
 
   <section class="screen show" id="s1">
