@@ -957,10 +957,11 @@ function jumpRow() {
   if (type === 'move') p.vx *= 1 + extra * 0.1;
   const side = (d) => { let tx = x + (Math.random() < 0.5 ? -1 : 1) * d; if (Math.abs(tx) > xm) tx = x - Math.sign(tx - x) * d; return THREE.MathUtils.clamp(tx, -xm, xm); };
   let risky = null;
+  // a spot is free when no planet (or a moving planet's whole swing) comes within a planet's width of it
+  const free = (px, py) => g.plats.every((q) => q.type === 'ground' || Math.hypot(Math.max(0, Math.abs(px - q.x0) - (q.vx ? 1.1 : 0)), py - q.grp.position.y) > 1.0);
   if (type !== 'move') {
-    const t = Math.random();
-    if (t < L.crumble) risky = makePlatform('crumble', side(1.1 + Math.random() * 0.8), y + (Math.random() - 0.5) * 0.6);
-    else if (t < L.crumble + L.hot) risky = makePlatform('hot', side(1.1 + Math.random() * 0.8), y + (Math.random() - 0.5) * 0.6);
+    const t = Math.random(), rtype = t < L.crumble ? 'crumble' : t < L.crumble + L.hot ? 'hot' : null;
+    if (rtype) for (let k = 0; k < 6 && !risky; k++) { const rx = side(1.15 + Math.random() * 0.8), ry = y + (Math.random() - 0.5) * 0.6; if (free(rx, ry)) risky = makePlatform(rtype, rx, ry); }
   }
   if (Math.random() < L.hole && !g.holeRecent) { jumpHole(side(1.6 + Math.random() * 0.6), y + gap * 0.45); g.holeRecent = 2; } else if (g.holeRecent) g.holeRecent--;
   if (Math.random() < L.star) {
