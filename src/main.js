@@ -1245,7 +1245,7 @@ function gamePose(dt) {
   //   reach (p>0.55): front legs stretch forward for the planet, hind legs stay under, head looks down
   // Ears are a spring that lags behind the motion: streaming back on the way up, flying up on the way down,
   // bouncing on the push-off and the landing.
-  if (g.playing && !g.finale) {
+  if (g.playing && !g.finale && !window.__noPose) {
     const inAir = g.rocket > 0 ? 0 : 1;
     const p = THREE.MathUtils.clamp(g.airT / Math.max(0.3, g.airDur), 0, 1);
     const ss = (a, b, x) => { const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -1253,13 +1253,13 @@ function gamePose(dt) {
     const tuck = inAir * Math.sin(Math.PI * THREE.MathUtils.clamp((p - 0.12) / 0.8, 0, 1));
     const reach = inAir * ss(0.55, 0.92, p);
     // bones: +X on a leg = swings back, +X on a lower leg = bends, +X on the spine/head = nose down, +X on an ear = back
-    life('spine', -0.16 * push + 0.20 * tuck + 0.06 * reach, 0, 0);
-    life('chest', -0.08 * push + 0.08 * tuck, 0, 0);
-    life('neck', -0.12 * push + 0.05 * tuck + 0.10 * reach, 0, 0);
-    life('head', -0.22 * push - 0.05 * tuck + 0.30 * reach, 0, 0);
-    const fu = 0.45 * push + 0.55 * tuck - 0.70 * reach, fl = 0.8 * push + 1.0 * tuck + 0.15 * reach;
+    life('spine', -0.16 * push - 0.04 * reach, 0, 0);
+    life('chest', -0.08 * push - 0.03 * reach, 0, 0);
+    life('neck', -0.12 * push + 0.03 * reach, 0, 0);
+    life('head', -0.22 * push + 0.10 * reach, 0, 0);
+    const fu = 0.35 * push + 0.22 * tuck - 0.35 * reach, fl = 0.7 * push + 0.55 * tuck + 0.30 * reach;
     life('f_upperL', fu, 0, 0); life('f_upperR', fu, 0, 0); life('f_lowerL', fl, 0, 0); life('f_lowerR', fl, 0, 0);
-    const bu = -0.55 * push + 0.55 * tuck + 0.25 * reach, bl = -0.25 * push + 0.85 * tuck + 0.45 * reach;
+    const bu = -0.5 * push + 0.28 * tuck + 0.2 * reach, bl = -0.25 * push + 0.5 * tuck + 0.4 * reach;
     life('b_upperL', bu, 0, 0); life('b_upperR', bu, 0, 0); life('b_lowerL', bl, 0, 0); life('b_lowerR', bl, 0, 0);
     // ear spring: target follows the vertical speed, the spring overshoots and settles
     const target = inAir * THREE.MathUtils.clamp(g.vy * 0.1, -0.75, 0.75);
