@@ -58,6 +58,9 @@ function showScreen(id) {
 
 /* ---------- renderer / scene ---------- */
 const isMobile = matchMedia('(pointer: coarse)').matches;
+// onboarding coach: swipe/arrow hint shown at the start of a round until the player first moves Ori
+function coachShow() { const t = document.getElementById('gCoachTip'); if (t) t.textContent = isMobile ? 'Свайпай в стороны, чтобы двигать Ори' : 'Двигай мышью или стрелками ← →'; document.body.classList.add('coach'); }
+function coachDone() { document.body.classList.remove('coach'); }
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, isMobile ? 1.5 : 2));
@@ -617,7 +620,7 @@ async function startGame() {
   play('idle', { fade: 0.3 });
   await wait(1100);
   game.mouthY0 = mouthWorld().y; game.mouthOff = mouthWorld().sub(pivot.position);
-  gSay(game.baseHint); game.playing = true;
+  gSay(game.baseHint); game.playing = true; coachShow();
   jumpBounce(JUMP.v0);
 }
 
@@ -757,7 +760,7 @@ function endGame() {
   for (let i = (game.meteors || []).length - 1; i >= 0; i--) removeMeteor(i);
   setX2(false);
   game.on = false; game.playing = false;
-  gEl.classList.remove('show'); document.body.classList.remove('night', 'gaming'); zoom.target = 1.3; gHint.textContent = '';
+  gEl.classList.remove('show'); document.body.classList.remove('night', 'gaming', 'coach'); zoom.target = 1.3; gHint.textContent = '';
 }
 
 // per frame, before the mixer: movement, spawning, catching
@@ -1557,6 +1560,7 @@ addEventListener('pointermove', (e) => {
     if (game.drag && game.drag.id === e.pointerId) {
       game.drag.moved += Math.abs(e.clientX - game.drag.lx); game.drag.lx = e.clientX;
       if (!game.finale) game.targetX = screenX2world(e.clientX);
+      if (game.drag.moved > 8) coachDone();
     }
     return;
   }
@@ -1573,7 +1577,7 @@ addEventListener('pointermove', (e) => {
   }
 });
 canvas.addEventListener('pointerdown', (e) => {
-  if (game.on && game.playing) game.targetX = screenX2world(e.clientX);
+  if (game.on && game.playing) { game.targetX = screenX2world(e.clientX); coachDone(); }
   if (game.on) { game.drag = { id: e.pointerId, x: e.clientX, lx: e.clientX, t: performance.now(), moved: 0 }; try { canvas.setPointerCapture(e.pointerId); } catch {} return; }
   // pick up the resting ball with a drag
   if (fetch_.ball && !busy && !phys.on && fetch_.ball.parent === scene) {
@@ -1617,8 +1621,8 @@ addEventListener('pointercancel', onPointerEnd);
 addEventListener('keydown', (e) => {
   if (!game.on) return;
   if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); gameTap(); }
-  if (e.code === 'ArrowLeft') game.targetX = pivot.position.x - 0.6;
-  if (e.code === 'ArrowRight') game.targetX = pivot.position.x + 0.6;
+  if (e.code === 'ArrowLeft') { game.targetX = pivot.position.x - 0.6; coachDone(); }
+  if (e.code === 'ArrowRight') { game.targetX = pivot.position.x + 0.6; coachDone(); }
 });
 canvas.addEventListener('dblclick', () => { spin.y = 0; spin.x = 0; spin.vy = 0; zoom.target = 1.3; });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoom.target = THREE.MathUtils.clamp(zoom.target * (1 + Math.sign(e.deltaY) * 0.08), zoom.min, zoom.max); }, { passive: false });
