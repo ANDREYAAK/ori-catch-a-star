@@ -613,7 +613,7 @@ async function startGame_() {
   gEl.classList.add('jump');
   setX2(false);
   Object.assign(game, { on: true, t: 0, dur: 25, stars: [], lit: 0, need: shape.pts.length * 2, caught: 0,
-    snap: 0, leap: null, anim: '', finale: false, lockAnim: false, helped: false, targetX: 0, airT: 0, airK: 0, squash: 0, lean: 0, flipT: 0,
+    snap: 0, leap: null, anim: '', finale: false, lockAnim: false, helped: false, targetX: 0, airT: 0, airDur: 1, airK: 0, squash: 0, lean: 0, earA: 0, earV: 0,
     baseY: FRAMES.game.model[1], mouthY0: 0, drag: null, tapped: null, tapWindow: false, playing: false, hero: null, heroPhase: null, shape });
   buildSky(shape); gName.textContent = shape.name; gBar.style.transform = 'scaleX(1)';
   game.baseHint = 'Ведите пальцем — Ори прыгает по планетам';
@@ -960,7 +960,8 @@ function spawnJumpMeteor() {
   g.meteors.push({ sp, ring: null, t: 0, vx: dir * (1.5 + Math.random() * 0.7 + extra * 0.1), vy: -0.2, spin: (Math.random() - 0.5) * 4 });
 }
 function jumpBounce(v, anim = true) {
-  const g = game; g.vy = v; g.slip = 0; g.airT = 0;
+  const g = game; g.vy = v; g.slip = 0; g.airT = 0; g.airDur = 2 * v / JUMP.g;   // flight time back to the same height
+  g.earV += 3;   // the push-off flings the ears back
   // takeoff: the clip's push-off at a slightly different speed each time, a big bounce takes longer
   if (anim) play('leap', { fade: 0.05, speed: v > JUMP.v0 * 1.2 ? 1.0 : 1.2 + Math.random() * 0.3 });
 }
@@ -1036,8 +1037,8 @@ function jumpLand(p, top) {
   } else if (p.type !== 'ground') g.series = 0;
   setSeries();
   let v = JUMP.v0;
-  if (p.type === 'ring') { v = JUMP.v0 * JUMP.boost; g.flipT = 0.7; }   // the ring throws him into a somersault
-  g.squash = 1;   // landing: a short squash, then the stretch of the push-off
+  if (p.type === 'ring') v = JUMP.v0 * JUMP.boost;
+  g.squash = 1; g.earV += 4;   // landing: a short squash, the ears swing on past their rest, then the stretch of the push-off
   if (g.dashNow) {
     v = Math.max(v, JUMP.v0 * JUMP.dash); g.dashNow = false; g.spinT = 0.7; gSay('5 идеальных — рывок!', 900);
     for (let k = 0; k < 14; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(pivot.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.4, Math.sin(a) * 1.2, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); }
@@ -1060,17 +1061,16 @@ function jumpStep(dt) {
   // body language of the flight: bank into the turn, squash on landing, stretch on the push-off, somersault off a ring
   const vx = dt > 0 ? (pivot.position.x - x0) / dt : 0;
   g.lean += (THREE.MathUtils.clamp(-vx * 0.05, -0.22, 0.22) - g.lean) * Math.min(1, 6 * dt);
-  g.airT += dt; if (g.squash > 0) g.squash = Math.max(0, g.squash - dt / 0.2);
+  g.airT += dt; if (g.squash > 0) g.squash = Math.max(0, g.squash - dt / 0.16);
   const sq = g.playing ? Math.sin(Math.PI * g.squash) : 0;
   const st = g.playing && g.vy > 0 ? Math.min(1, g.vy / JUMP.v0) * Math.max(0, 1 - g.airT / 0.3) : 0;
-  pivot.scale.set(1 + 0.09 * sq - 0.04 * st, 1 - 0.17 * sq + 0.09 * st, 1 + 0.09 * sq - 0.04 * st);
+  pivot.scale.set(1 + 0.11 * sq - 0.05 * st, 1 - 0.22 * sq + 0.11 * st, 1 + 0.11 * sq - 0.05 * st);
   if (g.playing) pivot.position.x = THREE.MathUtils.clamp(pivot.position.x + (g.wind + g.slip) * dt, -b.xm - 0.3, b.xm + 0.3);
   if (Math.abs(dx) > 0.15) g.face = Math.sign(dx);
   let wantYaw = !g.playing || g.rocket > 0 ? 0 : (g.face || 1) * (Math.abs(dx) > 0.15 ? 0.8 : 0.5);
   if (g.spinT > 0) { g.spinT -= dt; wantYaw += (1 - g.spinT / 0.7) * Math.PI * 2 * (g.face || 1); pivot.rotation.y = wantYaw; }
   else { pivot.rotation.y = Math.atan2(Math.sin(pivot.rotation.y), Math.cos(pivot.rotation.y)); let dyw = wantYaw - pivot.rotation.y; dyw = Math.atan2(Math.sin(dyw), Math.cos(dyw)); pivot.rotation.y += dyw * Math.min(1, 7 * dt); }
-  if (g.flipT > 0) { g.flipT -= dt; const u = 1 - Math.max(0, g.flipT) / 0.7; pivot.rotation.x = -Math.PI * 2 * u * u * (3 - 2 * u); }
-  else pivot.rotation.x = 0;
+  pivot.rotation.x = 0;
   pivot.rotation.z = g.playing ? g.lean : 0;
   pivot.position.z += (0 - pivot.position.z) * 0.12;
   if (!g.playing) {
@@ -1239,22 +1239,35 @@ function jumpStep(dt) {
 const _gq = new THREE.Quaternion(), _gx = new THREE.Vector3(1, 0, 0), _gy = new THREE.Vector3(0, 1, 0);
 function gamePose(dt) {
   const g = game;
-  // in the air: rising = legs tucked, ears streaming back, chest up; falling = nose down, front paws reaching
-  // for the planet, ears flying up; near the apex everything floats. Blended from the vertical speed.
+  // The jump as a bound: phase p runs from the push-off (0) through the apex (0.5) to the landing (1).
+  //   push (p<0.3): spine arched, hind legs extended back, front legs pulled up, head up
+  //   tuck (around the apex): all four legs gathered under the body, back rounded
+  //   reach (p>0.55): front legs stretch forward for the planet, hind legs stay under, head looks down
+  // Ears are a spring that lags behind the motion: streaming back on the way up, flying up on the way down,
+  // bouncing on the push-off and the landing.
   if (g.playing && !g.finale) {
-    const u = THREE.MathUtils.clamp(g.vy / JUMP.v0, -1, 1);
-    const w = g.rocket > 0 ? 0 : THREE.MathUtils.clamp((g.airT - 0.1) / 0.2, 0, 1);   // the takeoff clip plays first
-    g.airK += (u * w - g.airK) * Math.min(1, 9 * dt);
-    const k = g.airK, r = Math.max(0, k), f = Math.max(0, -k);
-    const fl = 0.05 * Math.sin(performance.now() * 0.011) * (1 - Math.abs(k));   // ears flutter near the apex
-    life('spine', -0.10 * r + 0.16 * f, 0, 0); life('chest', -0.05 * r + 0.07 * f, 0, 0);
-    life('head', 0.08 * r - 0.12 * f, 0, 0);
-    life('f_upperL', 0.35 * r - 0.45 * f, 0, 0); life('f_upperR', 0.35 * r - 0.45 * f, 0, 0);
-    life('f_lowerL', 0.45 * r + 0.25 * f, 0, 0); life('f_lowerR', 0.45 * r + 0.25 * f, 0, 0);
-    life('b_upperL', -0.2 * r + 0.18 * f, 0, 0); life('b_upperR', -0.2 * r + 0.18 * f, 0, 0);
-    life('b_lowerL', 0.15 * r + 0.3 * f, 0, 0); life('b_lowerR', 0.15 * r + 0.3 * f, 0, 0);
-    life('ear1L', 0.45 * r - 0.5 * f + fl, 0, 0); life('ear1R', 0.45 * r - 0.5 * f + fl, 0, 0);
-    life('ear2L', 0.25 * r - 0.3 * f + fl, 0, 0); life('ear2R', 0.25 * r - 0.3 * f + fl, 0, 0);
+    const inAir = g.rocket > 0 ? 0 : 1;
+    const p = THREE.MathUtils.clamp(g.airT / Math.max(0.3, g.airDur), 0, 1);
+    const ss = (a, b, x) => { const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+    const push = inAir * (1 - ss(0.05, 0.32, p));
+    const tuck = inAir * Math.sin(Math.PI * THREE.MathUtils.clamp((p - 0.12) / 0.8, 0, 1));
+    const reach = inAir * ss(0.55, 0.92, p);
+    // bones: +X on a leg = swings back, +X on a lower leg = bends, +X on the spine/head = nose down, +X on an ear = back
+    life('spine', -0.16 * push + 0.20 * tuck + 0.06 * reach, 0, 0);
+    life('chest', -0.08 * push + 0.08 * tuck, 0, 0);
+    life('neck', -0.12 * push + 0.05 * tuck + 0.10 * reach, 0, 0);
+    life('head', -0.22 * push - 0.05 * tuck + 0.30 * reach, 0, 0);
+    const fu = 0.45 * push + 0.55 * tuck - 0.70 * reach, fl = 0.8 * push + 1.0 * tuck + 0.15 * reach;
+    life('f_upperL', fu, 0, 0); life('f_upperR', fu, 0, 0); life('f_lowerL', fl, 0, 0); life('f_lowerR', fl, 0, 0);
+    const bu = -0.55 * push + 0.55 * tuck + 0.25 * reach, bl = -0.25 * push + 0.85 * tuck + 0.45 * reach;
+    life('b_upperL', bu, 0, 0); life('b_upperR', bu, 0, 0); life('b_lowerL', bl, 0, 0); life('b_lowerR', bl, 0, 0);
+    // ear spring: target follows the vertical speed, the spring overshoots and settles
+    const target = inAir * THREE.MathUtils.clamp(g.vy * 0.1, -0.75, 0.75);
+    g.earV += (55 * (target - g.earA) - 7 * g.earV) * dt; g.earA += g.earV * dt;
+    g.earA = THREE.MathUtils.clamp(g.earA, -1.1, 1.1);
+    const splay = 0.18 * tuck;
+    life('ear1L', g.earA, 0, splay); life('ear1R', g.earA, 0, -splay);
+    life('ear2L', 0.6 * g.earA, 0, 0); life('ear2R', 0.6 * g.earA, 0, 0);
   }
   if (game.stun > 0 && headBone) { const k = game.stun / METEOR.stun; _gq.setFromAxisAngle(_gy, 0.28 * k * Math.sin(game.stun * 40)); procApply(headBone, _gq); }
   if (game.snap > 0 && jawBone && headBone) {
