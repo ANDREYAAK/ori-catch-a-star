@@ -806,7 +806,7 @@ function gameStep(dt) {
 // down, side gusts) → Чёрные дыры (pull him in; skimming past the edge gives a boost) → Глубокий космос (all
 // mixed, harder every 20 m). Rare power-ups: rocket (3 s of flight), bubble (saves once), magnet (5 s).
 // Every row has one reachable safe platform; traps and hazards are extras.
-const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 20, goal: 100, maxGap: 2.1, speed: 3.6, rescue: 5, weak: 0.72, orbitEvery: [3, 4], bank0: 5, perfect: 0.13 };
+const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 20, goal: 100, maxGap: 2.1, speed: 3.6, rescue: 5, lives: 2, weak: 0.72, orbitEvery: [3, 4], bank0: 5, perfect: 0.13 };
 const LEVELS = [
   { name: 'Орбита', gap: [1.2, 1.6], move: 0, ice: 0, ring: 0.1, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, star: 0.45, bonus: 0.03 },
   { name: 'Пояс астероидов', gap: [1.4, 1.8], move: 0.3, ice: 0, ring: 0.08, crumble: 0.35, hot: 0, hole: 0, meteor: 5, gust: 0, star: 0.4, bonus: 0.045 },
@@ -831,7 +831,7 @@ const gCash = $('#gCash'), gScore = $('#gScore'), gAlt = $('#gAlt'), gAltFill = 
 function updateScore() {
   if (!gScore) return;
   if (game.mode !== 'jump') { gScore.innerHTML = ''; return; }
-  gScore.innerHTML = `${fmtScore(Math.floor(game.best || 0))} м<span>★ ${game.bank}${(game.mult || 1) > 1 ? ' · ×' + game.mult : ''}</span>`;
+  gScore.innerHTML = `${fmtScore(Math.floor(game.best || 0))} м<span>★ ${game.bank}${(game.mult || 1) > 1 ? ' · ×' + game.mult : ''} · ${'●'.repeat(Math.max(0, JUMP.lives - (game.rescues || 0)))}${'○'.repeat(Math.min(JUMP.lives, game.rescues || 0))}</span>`;
   gCash.classList.toggle('on', !!(game.playing && !game.finale && (game.mult || 1) >= 3 && game.bank >= 10));
   const f = THREE.MathUtils.clamp((game.alt || 0) / JUMP.goal, 0, 1), fb = THREE.MathUtils.clamp((game.best || 0) / JUMP.goal, 0, 1);
   gAltFill.style.transform = `scaleY(${fb})`; gAltMe.style.bottom = `${f * 100}%`;
@@ -1050,6 +1050,8 @@ function jumpLose(why) {
   try { navigator.vibrate && navigator.vibrate(90); } catch {}
   g.series = 0; g.dashReady = false; setSeries(); multBreak();
   const price = rescuePrice();
+  // two rescues per run, and each one costs stars; after that a fall is the end of the run
+  if (g.rescues >= JUMP.lives) { gSay(`${why ? why + ' ' : ''}Спасений больше нет`, 1800); g.playing = false; startFinale(); return; }
   if (g.bank < price) { gSay(`${why ? why + ' ' : ''}Не хватило звёзд на спасение (нужно ${price} ★)`, 1800); g.playing = false; startFinale(); return; }
   g.bank -= price; g.rescues++; updateScore();
   const b = jumpBounds(), y = b.bot + 1.0;
@@ -1061,7 +1063,7 @@ function jumpLose(why) {
   const p = makePlatform('rescue', x, y);
   pivot.position.set(x, p.grp.position.y + p.top, 0); jumpBounce(JUMP.v0 * 1.15); g.invuln = 1.5;
   gPop(`−${price} ★`, toScreen(p.grp.position), true);
-  gSay(`${why ? why + ' ' : ''}Спасение за ${price} ★ · следующее — ${rescuePrice()} ★`, 1600);
+  gSay(`${why ? why + ' ' : ''}Спасение за ${price} ★ · ${JUMP.lives - g.rescues > 0 ? `осталось ${JUMP.lives - g.rescues} за ${rescuePrice()} ★` : 'это было последнее'}`, 1800);
 }
 function jumpCollectStar(i) {
   const g = game, s = g.stars[i], at = toScreen(s.position); removeGameStar(i, true);
