@@ -413,10 +413,8 @@ const store = {
   clear() { try { localStorage.removeItem('ori_star'); } catch {} },
 };
 function pickPhrase() {
-  const lib = window.ORI_PHRASES; const cats = Object.keys(lib);
+  const pool = window.ORI_PHRASES;
   const used = (store.get() && store.get().used) || [];
-  const money = Math.random() < 0.17;
-  const pool = money ? lib.money : cats.filter((c) => c !== 'money').flatMap((c) => lib[c]);
   const fresh = pool.filter((p) => !used.includes(p));
   const arr = fresh.length ? fresh : pool;
   return arr[Math.floor(Math.random() * arr.length)];
