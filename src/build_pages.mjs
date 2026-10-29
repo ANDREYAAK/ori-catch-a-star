@@ -16,7 +16,9 @@ let html = readFileSync('index.html', 'utf8');
 for (const [k, v] of Object.entries(rep)) html = html.replace(k, () => v);
 // the model URL carries a content hash, so a new model is picked up at once (GitHub Pages caches files for 10 min)
 const glbHash = (await import('node:crypto')).createHash('md5').update(readFileSync('pages/assets/ori.glb')).digest('hex').slice(0, 10);
-html = html.replace('<script>__BUNDLE__</script>', '<script>window.ORI_GLB_V="' + glbHash + '"</script><script src="assets/bundle.js?v=' + Date.now() + '"></script>');
+// the model download starts in <head>, so it runs alongside bundle.js instead of waiting for it (main.js picks up ORI_GLB_P)
+html = html.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<script>window.ORI_GLB_V="' + glbHash + '";window.ORI_GLB_P=fetch("assets/ori.glb?v=' + glbHash + '").then(function(r){if(!r.ok)throw new Error("ori.glb "+r.status);return r.arrayBuffer()});</script>');
+html = html.replace('<script>__BUNDLE__</script>', '<script src="assets/bundle.js?v=' + Date.now() + '"></script>');
 writeFileSync('pages/index.html', html);
 writeFileSync('pages/.nojekyll', '');
 console.log('pages/ ready');

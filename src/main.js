@@ -168,6 +168,8 @@ function spawnFaller(x, y, z, v, s, life) {
 }
 // emission is per SECOND, not per frame: a 120 Hz screen (or a benchmark) must not double the sparks
 const emit = (perFrameAt60, dt) => { const n = perFrameAt60 * dt * 60; return Math.floor(n) + (Math.random() < n % 1 ? 1 : 0); };
+// the same for smoothing: k is the per-frame lerp factor tuned at 60 fps; on 120 Hz the camera must not settle twice as fast
+const ease = (k, dt) => 1 - Math.pow(1 - k, dt * 60);
 function stepSparks(dt) {
   let n = 0;
   for (let i = fallers.length - 1; i >= 0; i--) {
@@ -352,7 +354,10 @@ function play(name, { fade = 0.25, onDone, speed = 1 } = {}) {
 }
 
 async function loadModel() {
-  const buf = window.ORI_GLB ? decodeGLB(window.ORI_GLB) : await (await fetch('assets/ori.glb' + (window.ORI_GLB_V ? '?v=' + window.ORI_GLB_V : ''))).arrayBuffer();   // versioned: a new model is never served from an old cache
+  // versioned: a new model is never served from an old cache
+  const fetchGLB = () => fetch('assets/ori.glb' + (window.ORI_GLB_V ? '?v=' + window.ORI_GLB_V : '')).then((r) => { if (!r.ok) throw new Error('ori.glb ' + r.status); return r.arrayBuffer(); });
+  // pages build: the page head already started the download (ORI_GLB_P), so it ran alongside bundle.js
+  const buf = window.ORI_GLB ? decodeGLB(window.ORI_GLB) : await (window.ORI_GLB_P || fetchGLB()).catch(fetchGLB);
   return new Promise((resolve, reject) => {
     const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
     loader.parse(buf, '', (gltf) => {
@@ -406,7 +411,8 @@ function setFrame(id) { frame = id; }
 function floorY() { return (pivot ? pivot.position.y : 0) + BALL_R; }
 
 /* ---------- state machine ---------- */
-const TODAY = new Date().toISOString().slice(0, 10);
+// the player's own calendar day (toISOString is UTC: in Moscow the "day" used to turn over at 03:00)
+const TODAY = (() => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; })();
 const store = {
   get() { try { return JSON.parse(localStorage.getItem('ori_star') || 'null'); } catch { return null; } },
   set(v) { try { localStorage.setItem('ori_star', JSON.stringify(v)); } catch {} },
@@ -906,12 +912,17 @@ showRecord();
 const gScore = $('#gScore'), gAlt = $('#gAlt'), gAltFill = $('#gAltFill'), gAltMe = $('#gAltMe'), gAltStar = $('#gAltStar');
 function updateScore() {
   if (!gScore) return;
-  if (game.mode !== 'jump') { gScore.innerHTML = ''; return; }
-  gScore.innerHTML = `${fmtScore(Math.floor(game.best || 0))} м<span>★ ${game.bank} · ${'●'.repeat(Math.max(0, JUMP.lives - (game.rescues || 0)))}${'○'.repeat(Math.min(JUMP.lives, game.rescues || 0))}</span>`;
+  if (game.mode !== 'jump') { gScore.innerHTML = hud.html = ''; return; }
+  // called every frame: the DOM is written only when something shown actually changed (no layout per frame)
+  const html = `${fmtScore(Math.floor(game.best || 0))} м<span>★ ${game.bank} · ${'●'.repeat(Math.max(0, JUMP.lives - (game.rescues || 0)))}${'○'.repeat(Math.min(JUMP.lives, game.rescues || 0))}</span>`;
+  if (html !== hud.html) { hud.html = html; gScore.innerHTML = html; }
   const f = THREE.MathUtils.clamp((game.alt || 0) / JUMP.goal, 0, 1), fb = THREE.MathUtils.clamp((game.best || 0) / JUMP.goal, 0, 1);
-  gAltFill.style.transform = `scaleY(${fb})`; gAltMe.style.bottom = `${f * 100}%`;
-  gAltStar.classList.toggle('got', !!game.dayStar);
+  const fill = `scaleY(${fb.toFixed(3)})`, me = `${(f * 100).toFixed(1)}%`;
+  if (fill !== hud.fill) { hud.fill = fill; gAltFill.style.transform = fill; }
+  if (me !== hud.me) { hud.me = me; gAltMe.style.bottom = me; }
+  if (!!game.dayStar !== hud.star) { hud.star = !!game.dayStar; gAltStar.classList.toggle('got', hud.star); }
 }
+const hud = { html: '', fill: '', me: '', star: null };
 function setSeries() {
   const g = game, n = g.series;
   gX2.textContent = n >= 3 ? `Идеально ×${n} · звёзды ×2` : n >= 1 ? `Идеально ×${n}` : '';
@@ -1193,8 +1204,7 @@ function jumpLand(p, top) {
   const g = game, dxp = pivot.position.x - p.grp.position.x;
   pivot.position.y = top; setTakeoff(top);
   if (p.type === 'ice') {   // a comet takes three landings: cracks, more cracks, then it shatters. Slippery: he keeps sliding a little
-    p.hp = (p.hp ?? 3) - 1;
-    g.slip = THREE.MathUtils.clamp(g.vx * 0.35, -1.4, 1.4);
+    p.hp = (p.hp ?? 3) - 1;   // (the slide itself is set after jumpBounce below, which resets slip)
     if (p.hp > 0) {
       p.body.material.emissiveMap = iceCracks[3 - p.hp]; p.body.material.emissive.set(0xffffff); p.body.material.emissiveIntensity = 0.9; p.body.material.needsUpdate = true;
       meteorBurst(new THREE.Vector3(pivot.position.x, top, 0.25), 4, false);
@@ -1219,6 +1229,7 @@ function jumpLand(p, top) {
   }
   if (p.type === 'ring') for (let k = 0; k < 12; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(p.grp.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 1.5, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); }
   jumpBounce(v);
+  if (p.type === 'ice') g.slip = THREE.MathUtils.clamp(g.vx * 0.35, -1.4, 1.4);   // slippery: he keeps sliding a little
   // bouncing in place: now and then he turns to look the other way
   if (Math.abs(g.targetX - pivot.position.x) < 0.15 && Math.random() < 0.4) g.face = -(g.face || 1);
   if (p.type === 'ice' && p.hp <= 0) { p.alive = false; p.gone = 0.001; meteorBurst(new THREE.Vector3(p.grp.position.x, top, 0.25), 12, false); }
@@ -1249,7 +1260,7 @@ function jumpStep(dt) {
   else { pivot.rotation.y = Math.atan2(Math.sin(pivot.rotation.y), Math.cos(pivot.rotation.y)); let dyw = wantYaw - pivot.rotation.y; dyw = Math.atan2(Math.sin(dyw), Math.cos(dyw)); pivot.rotation.y += dyw * Math.min(1, 7 * dt); }
   pivot.rotation.x = 0;
   pivot.rotation.z = g.playing ? g.lean + (g.falling ? -(g.face || 1) * Math.min(1.1, g.fallT * 2.2) : 0) : 0;
-  pivot.position.z += (0 - pivot.position.z) * 0.12;
+  pivot.position.z += (0 - pivot.position.z) * ease(0.12, dt);
   if (!g.playing) {
     // before the start / after the run: stand (or drop) onto the pedestal
     if (pivot.position.y > g.baseY + 0.001 || g.vy > 0) { g.vy -= JUMP.g * dt; pivot.position.y += g.vy * dt; if (pivot.position.y <= g.baseY) { pivot.position.y = g.baseY; g.vy = 0; play('idle', { fade: 0.2 }); } }
@@ -1372,7 +1383,7 @@ function jumpStep(dt) {
   if (g.magnet > 0) g.magnet -= dt;
   // power-ups
   for (let i = g.bonuses.length - 1; i >= 0; i--) {
-    const bo = g.bonuses[i]; bo.t += dt; bo.sp.position.y += Math.sin(bo.t * 3) * 0.004;
+    const bo = g.bonuses[i]; bo.t += dt; bo.sp.position.y += Math.sin(bo.t * 3) * 0.24 * dt;
     if (Math.hypot(bo.sp.position.x - body.x, bo.sp.position.y - body.y) < 0.6) {
       const at = toScreen(bo.sp.position); scene.remove(bo.sp); g.bonuses.splice(i, 1);
       sfx.play('bonus');
@@ -1587,12 +1598,15 @@ const playAsync = (name, fade = 0.2) => new Promise((res) => {
   play(name, { fade, onDone: fin }); setTimeout(fin, dur);
 });
 async function throwBall(cx, cy) {
+  // the dog is busy (a command, a chase): ignore the tap and stay armed. Returning from inside the try below
+  // would run the finally and cut the running command short
+  if (busy) return;
   try { await throwBallInner(cx, cy); } catch (e) { console.error(e); } finally { busy = false; holdJaw = false; fetch_.pos = null; fetch_.yaw = null; if (current !== actions.idle) play('idle', { fade: 0.4 }); }
 }
 async function throwBallInner(cx, cy) {
   const target = floorPoint(cx, cy); if (!target) return;
   fetch_.mode = false; syncThrowBtns();
-  if (busy) return; busy = true; petting = false; holdJaw = false;
+  busy = true; petting = false; holdJaw = false;
   if (fetch_.ball) { scene.remove(fetch_.ball); fetch_.ball = null; }
   const ball = makeBall(); fetch_.ball = ball; scene.add(ball);
   const start = camera.position.clone().add(new THREE.Vector3(0.35, -0.55, -0.6)); ball.position.copy(start);
@@ -1652,7 +1666,7 @@ async function throwBallInner(cx, cy) {
   await wait((1023 - 1010) / 24 * 1000);
   holdJaw = false; scene.attach(ball); phys.on = false; phys.v.set(0, 0, 0); phys.vy = 0;
   const from = ball.position.clone(); const side = Math.random() < 0.5 ? -1 : 1;
-  const to = new THREE.Vector3(pivot.position.x + side * 0.38, 0.072, pivot.position.z + 0.5); const d1 = performance.now();
+  const to = new THREE.Vector3(pivot.position.x + side * 0.38, floorY(), pivot.position.z + 0.5); const d1 = performance.now();
   await new Promise((res) => { const step = () => { const t = Math.min(1, (performance.now() - d1) / 600); ball.position.lerpVectors(from, to, t); ball.position.y = THREE.MathUtils.lerp(from.y, to.y, t * t) + (t > 0.7 ? Math.sin((t - 0.7) / 0.3 * Math.PI) * 0.08 : 0); ball.rotation.x += 0.1; if (t < 1) requestAnimationFrame(step); else { ball.position.copy(to); res(); } }; step(); });
   await dropP;
   play('idle', { fade: 0.4 }); busy = false;
@@ -1898,7 +1912,10 @@ addEventListener('pointermove', (e) => {
   if (spin.dragging) {
     const dx = e.clientX - spin.lastX, dy = e.clientY - spin.lastY; spin.lastX = e.clientX; spin.lastY = e.clientY;
     spin.moved += Math.abs(dx) + Math.abs(dy);
-    spin.vy = dx * 0.006; spin.y += spin.vy; spin.x = THREE.MathUtils.clamp(spin.x + dy * 0.003, -0.35, 0.35);
+    // the release spin is kept as "radians per 60 Hz frame", measured over the real time between pointer events,
+    // so the coast after a flick is the same on a 60 and a 120 Hz screen
+    const et = THREE.MathUtils.clamp(e.timeStamp - (spin.lastT || e.timeStamp - 16.7), 4, 50); spin.lastT = e.timeStamp;
+    spin.y += dx * 0.006; spin.vy = dx * 0.006 * 16.7 / et; spin.x = THREE.MathUtils.clamp(spin.x + dy * 0.003, -0.35, 0.35);
     if (spin.moved > 12 && petting) stopPet();
   }
 });
@@ -1910,7 +1927,7 @@ canvas.addEventListener('pointerdown', (e) => {
     const bp = fetch_.ball.position.clone().project(camera); const bx = (bp.x + 1) / 2 * innerWidth, by = (1 - bp.y) / 2 * innerHeight;
     if (Math.hypot(e.clientX - bx, e.clientY - by) < Math.min(innerWidth, innerHeight) * 0.12) { phys.grab = { id: e.pointerId, pts: [[e.clientX, e.clientY, performance.now()]] }; try { canvas.setPointerCapture(e.pointerId); } catch {} return; }
   }
-  pointer.x = e.clientX; pointer.y = e.clientY; pointer.down = true; eyes.hold = 4; spin.dragging = true; spin.lastX = e.clientX; spin.lastY = e.clientY; spin.moved = 0; try { canvas.setPointerCapture(e.pointerId); } catch {} });
+  pointer.x = e.clientX; pointer.y = e.clientY; pointer.down = true; eyes.hold = 4; spin.dragging = true; spin.lastX = e.clientX; spin.lastY = e.clientY; spin.lastT = e.timeStamp; spin.moved = 0; try { canvas.setPointerCapture(e.pointerId); } catch {} });
 function onPointerEnd(e) {
   if (game.on) {
     const d = game.drag; game.drag = null;
@@ -2008,23 +2025,23 @@ function tick(_ts, simDt) {
   const f = FRAMES[frame];
   view.tPos.fromArray(f.pos); view.tLook.fromArray(f.look);
   const narrow = innerWidth / innerHeight < 0.62 ? 1.0 : 0.85;
-  zoom.v += (zoom.target - zoom.v) * 0.12;
+  zoom.v += (zoom.target - zoom.v) * ease(0.12, dt);
   view.tPos.sub(view.tLook).multiplyScalar(zoom.v * narrow).add(view.tLook);
-  view.pos.lerp(view.tPos, 0.06); view.look.lerp(view.tLook, 0.06);
+  view.pos.lerp(view.tPos, ease(0.06, dt)); view.look.lerp(view.tLook, ease(0.06, dt));
   camera.position.copy(view.pos); camera.lookAt(view.look);
   if (ori) {
     if (game.on) gameStep(dt);
     else {
     if (fetch_.pos) { const tgt = fetch_.pos; const dv = tgt.clone().sub(pivot.position); dv.y = 0; const L = dv.length(); const stepL = Math.min(L, RUN_SPEED * dt); if (L > 1e-4) pivot.position.addScaledVector(dv.normalize(), stepL); }
-    else pivot.position.lerp(new THREE.Vector3().fromArray(f.model), 0.06);
+    else pivot.position.lerp(_v.fromArray(f.model), ease(0.06, dt));
     pedestal.position.set(pivot.position.x, pivot.position.y + 0.005, pivot.position.z);
-    if (!spin.dragging) { spin.y += spin.vy; spin.vy *= 0.92; spin.x *= 0.95; }
+    if (!spin.dragging) { const n60 = dt * 60; spin.y += spin.vy * n60; spin.vy *= Math.pow(0.92, n60); spin.x *= Math.pow(0.95, n60); }
     // while the dog is fetching, its facing is driven by the chase; fade the user's manual rotation to zero
     // so releasing the fetch yaw cannot snap it back sideways when it delivers the ball
     if (fetch_.yaw !== null) { const kd = 1 - Math.pow(0.02, dt); spin.y -= spin.y * kd; spin.x -= spin.x * kd; spin.vy = 0; }
     const baseY = frame === 's1' ? -0.35 : frame === 's3' ? -0.5 : -0.2;
     const wantYaw = fetch_.yaw !== null ? baseY + fetch_.yaw : Math.sin(t * 0.35) * 0.06 + baseY + spin.y;
-    let dy = wantYaw - pivot.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); pivot.rotation.y += dy * (fetch_.yaw !== null ? 0.18 : 1);
+    let dy = wantYaw - pivot.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); pivot.rotation.y += dy * (fetch_.yaw !== null ? ease(0.18, dt) : 1);
     pivot.rotation.x = spin.x;
     }
     procUndo();
@@ -2075,6 +2092,9 @@ function tick(_ts, simDt) {
 /* ---------- boot ---------- */
 (async () => {
   try { await loadModel(); } catch (e) { console.error(e); $('#loading').textContent = 'Не удалось загрузить Ори'; return; }
+  // compile the dog's shaders (crystal body: clearcoat + iridescence + sheen + skinning) while the loader is still up,
+  // so the first frames do not stall on them
+  try { await renderer.compileAsync(scene, camera); } catch (e) { console.error(e); }
   $('#loading').style.opacity = 0; setTimeout(() => $('#loading').remove(), 500);
   const saved = store.get();
   if (saved && saved.date === TODAY && saved.phrase) {
@@ -2083,4 +2103,21 @@ function tick(_ts, simDt) {
   play('idle');
   window.__ori = { get actions() { return actions; }, get mixer() { return mixer; }, play, game, tick, sim: (dt) => tick(0, dt), toScreen, startGame, camera, renderer, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, pant, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
   tick();
+  setTimeout(warmGame, 800);
 })();
+
+// The game's materials (planets, meteorite, ice with and without cracks, red dwarf, orbit track, sprites, the ball)
+// are compiled in the background on the menu: otherwise each one compiles in the frame it first appears,
+// a hitch at the start of a round and on the first cracked comet.
+function warmGame() {
+  const grp = new THREE.Group(), cracked = jumpMat.ice.clone();
+  cracked.emissiveMap = iceCracks[1]; cracked.emissive.set(0xffffff);
+  for (const m of [...jumpMat.planet, jumpMat.ice, cracked, jumpMat.hot, jumpMat.lime, jumpMat.belt]) grp.add(new THREE.Mesh(jumpGeo.planet, m));
+  grp.add(new THREE.Mesh(jumpGeo.rock, jumpMat.rock));
+  for (const map of [starTex, starGlowTex, glowTex, holeTex, bubbleTex, meteorTex, bonusTex.rocket]) grp.add(new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false })));
+  grp.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: starTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })));
+  grp.add(new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: 0xfafafc, transparent: true, opacity: 0.28 })));
+  grp.add(makeBall());
+  // not disposed afterwards: dispose() would release the very programs that were just compiled
+  renderer.compileAsync(grp, camera, scene).catch((e) => console.error(e));
+}
