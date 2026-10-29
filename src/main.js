@@ -547,13 +547,14 @@ function buildSky(shape) {
   });
   game.litSet = new Set(); game.shown = new Set();
 }
-// the constellation is filled in UNITS: every point takes two stars (half-lit after the first one)
+// the constellation is filled in UNITS: every point takes PER_PT stars (half-lit until the last one)
+const PER_PT = 3;
 function refreshSky() {
   const full = new Set();
   game.ptEls.forEach((el, p) => {
-    const c = (game.shown.has(2 * p) ? 1 : 0) + (game.shown.has(2 * p + 1) ? 1 : 0);
-    el.classList.toggle('lit', c === 2); el.classList.toggle('half', c === 1); el.setAttribute('r', c === 2 ? 2.2 : c === 1 ? 1.95 : 1.7);
-    if (c === 2) full.add(p);
+    let c = 0; for (let k = 0; k < PER_PT; k++) if (game.shown.has(PER_PT * p + k)) c++;
+    el.classList.toggle('lit', c === PER_PT); el.classList.toggle('half', c > 0 && c < PER_PT); el.setAttribute('r', c === PER_PT ? 2.2 : c > 0 ? 1.7 + 0.35 * c / PER_PT : 1.7);
+    if (c === PER_PT) full.add(p);
   });
   game.litSet = full;
   for (const l of game.lineEls) l.el.classList.toggle('lit', full.has(l.a) && full.has(l.b));
@@ -562,13 +563,13 @@ function lightUnit(idx) { game.shown.add(idx); refreshSky(); }
 function flyToSky(from, idx) {
   const el = document.createElement('div'); el.className = 'g-fly'; el.style.left = from.x + 'px'; el.style.top = from.y + 'px';
   document.body.appendChild(el);
-  const r = game.ptEls[idx >> 1].getBoundingClientRect();
+  const r = game.ptEls[Math.floor(idx / PER_PT)].getBoundingClientRect();
   setTimeout(() => { el.style.transform = `translate(${r.left + r.width / 2 - from.x}px, ${r.top + r.height / 2 - from.y}px) scale(.45)`; }, 20);
   setTimeout(() => { el.remove(); if (game.on && idx < game.lit) lightUnit(idx); }, 640);
 }
 function unlightUnit(idx) {
   game.shown.delete(idx); refreshSky();
-  const el = game.ptEls[idx >> 1]; el.classList.remove('lost'); void el.getBBox(); el.classList.add('lost');
+  const el = game.ptEls[Math.floor(idx / PER_PT)]; el.classList.remove('lost'); void el.getBBox(); el.classList.add('lost');
 }
 function setX2(on) { game.x2 = on; gX2.classList.toggle('on', on); }
 function removeMeteor(i) {
@@ -675,10 +676,10 @@ async function startGame_() {
   Object.assign(game, { mode: gameMode, meteors: [], meteorIn: METEOR.from, combo: 0, bestCombo: 0, x2: false, stun: 0, invuln: 0, hits: 0, dodged: 0, rush: false,
     wag: 0, slow: 0, hero: null, heroRing: null, heroPerfect: false, newRecord: false,
     plats: [], bonuses: [], holes: [], bank: 0, best: 0, alt: 0, vy: 0, noShine: false, dayStar: false, mouthOff: null });
-  gX2.textContent = '';
+  gX2.textContent = ''; gResult.textContent = '';
   gEl.classList.add('jump');
   setX2(false);
-  Object.assign(game, { on: true, t: 0, dur: 25, stars: [], lit: 0, need: shape.pts.length * 2, caught: 0,
+  Object.assign(game, { on: true, t: 0, dur: 25, stars: [], lit: 0, need: shape.pts.length * PER_PT, caught: 0,
     snap: 0, leap: null, anim: '', finale: false, lockAnim: false, helped: false, targetX: 0, airT: 0, airDur: 1, airK: 0, squash: 0, lean: 0, earA: 0, earV: 0,
     baseY: FRAMES.game.model[1], mouthY0: 0, drag: null, tapped: null, tapWindow: false, playing: false, hero: null, heroPhase: null, shape });
   buildSky(shape); gName.textContent = shape.name; gBar.style.transform = 'scaleX(1)';
@@ -703,6 +704,7 @@ const HERO = { fallV: 0.72, leapUp: 0.42, leapH: 1.0, down: 0.4 };
 const startFinale = guarded(startFinale_);
 async function startFinale_() {
   const g = game; if (g.finale) return; g.finale = true; g.playing = false;
+  gRecLine.classList.remove('show'); hud.recShow = false;
   for (let i = g.stars.length - 1; i >= 0; i--) removeGameStar(i, true);
   for (let i = g.meteors.length - 1; i >= 0; i--) { meteorBurst(g.meteors[i].sp.position, 5, false); removeMeteor(i); }
   setX2(false); g.stun = 0;
@@ -714,8 +716,12 @@ async function startFinale_() {
     await gwait(1400);
     const h = Math.floor(g.best), rec = getRecord(); g.newRecord = h > rec; if (g.newRecord) setRecord(h);
     const rs = getStarRecord(); g.newStarRecord = g.bank > rs; if (g.newStarRecord) setStarRecord(g.bank);
-    gSay(`${g.newRecord ? 'Новый рекорд' : 'Высота'}: ${fmtScore(h)} м · ${g.newStarRecord ? 'рекорд звёзд' : 'звёзды'}: ★ ${g.bank} · идеальных подряд: ${g.bestSeries}` + (g.newRecord ? '' : ` · рекорд ${fmtScore(Math.max(rec, h))} м`));
-    await gwait(2200);
+    // "almost": how close the run came to the next goal, shown now and again under the replay button
+    g.result = !g.dayStar ? `До звезды дня не хватило ${fmtScore(JUMP.goal - h)} м`
+      : !g.dayShine ? `До сияния не хватило ${g.need - g.lit} ★` : '';
+    if (!g.result && !g.newRecord && rec - h > 0 && rec - h <= 10) g.result = `До рекорда не хватило ${rec - h} м`;
+    gSay(`${g.newRecord ? 'Новый рекорд' : 'Высота'}: ${fmtScore(h)} м · ${g.newStarRecord ? 'рекорд звёзд' : 'звёзды'}: ★ ${g.bank}` + (g.result ? ` · ${g.result}` : g.newRecord ? '' : ` · рекорд ${fmtScore(Math.max(rec, h))} м`));
+    await gwait(2600);
     if (g.dayStar) {   // the star of the day was caught in flight: straight to the card
       gEl.classList.add('done'); await gwait(600);
       await heroFinish(g.dayShine); return;
@@ -814,6 +820,7 @@ async function heroFinish_(shine) {
   const shineAll = !!shine || !!(keep && rec.shine);
   store.set({ date: TODAY, phrase: phraseToday, used: keep ? rec.used || [] : [...(rec.used || []), phraseToday].slice(-160), shine: shineAll, constellation: g.shape.name });
   $('#phrase').textContent = phraseToday; applyShine(shineAll);
+  gResult.textContent = g.result || '';   // the "almost" line, right above "Сыграть ещё"
   await gwait(500);
   endGame();
   screens.s3.classList.remove('hidecard'); $('#showCard').style.display = 'none';
@@ -823,6 +830,7 @@ async function heroFinish_(shine) {
   play('idle', { fade: 0.5 });
   unparkBall(); busy = false;
 }
+const gResult = $('#gResult');
 function applyShine(shine) {
   const card = screens.s3.querySelector('.card'); card.classList.toggle('shine', !!shine);
   const from = card.querySelector('.from'); from.textContent = shine ? 'Ори поймал для вас сияющую звезду' : 'Ори поймал для вас звезду';
@@ -861,16 +869,20 @@ function gameStep(dt) {
 
 /* ---------- "Прыжки к звёздам": endless climb over planets ---------- */
 // Goal: the star of the day hangs at 100 m (its light is always visible at the top and grows as Ori nears it).
-// Reached it = a shining star (if he never needed rescuing); after it the climb goes on for a record.
-// Ori bounces by himself, the finger steers. Height is the score; stars are the currency of a rescue
-// (5 stars, then 8; two rescues per run). A miss is final: once he drops below the planet he pushed off from,
-// nothing catches him. Perfect landings (close to the planet's centre) build a series: from the 3rd one stars
-// count x2, every 5th one gives a dash (a much higher bounce).
+// Every caught star lights a third of a point of the constellation of the day; the star of the day shines if the
+// constellation is complete when he gets it (or gets completed after). After 100 m the climb goes on for a record.
+// Ori bounces by himself, the finger steers, a tap in the air is a hop (one charge, refilled by a perfect landing).
+// A miss ends the run: once he drops below the planet he pushed off from, nothing catches him, unless he carries
+// the bubble (rare, about one per run), which catches him once. Perfect landings (close to the planet's centre)
+// build a series: from the 3rd one stars count x2, every 5th one gives a dash (a much higher bounce).
 // Levels every 20 m, each brings ONE new thing, shown first in a safe form in the level's first rows
 // (and those rows are easier: a sawtooth difficulty curve). Inside a level the gaps and the share of
 // hazards grow smoothly. Every row has one reachable safe planet; no two bodies ever come closer than minSep.
-const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 20, goal: 100, maxGap: 1.95, minGap: 1.15, speed: 3.6, rescue: 5, lives: 2,
-  orbitEvery: [4, 5], bank0: 5, perfect: 0.13, introRows: 3, minSep: 1.1, holeSep: 1.45, missDrop: 0.45, landW: 0.46, foot: 0.14 };
+// bubble: [first, every] = metres of the first bubble and the spacing after it (+ up to half again at random)
+// hop = the take-off speed of the mid-air hop; edge = a landing this far off centre (share of landW) is "on a hair"
+const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 20, goal: 100, maxGap: 1.95, minGap: 1.15, speed: 3.6,
+  orbitEvery: [4, 5], perfect: 0.13, introRows: 3, minSep: 1.1, holeSep: 1.45, missDrop: 0.45, landW: 0.46, foot: 0.14,
+  bubble: [18, 40], hop: 5.2, edge: 0.78, trailRows: 2 };
 // [a, b] = the value at the start and at the end of the level; meteor = seconds between meteors
 const LEVELS = [
   { name: 'Орбита', gap: [1.15, 1.4], dx: [1.0, 1.3], ring: 0.12, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, star: 0.5, bonus: 0.03 },
@@ -914,15 +926,19 @@ function updateScore() {
   if (!gScore) return;
   if (game.mode !== 'jump') { gScore.innerHTML = hud.html = ''; return; }
   // called every frame: the DOM is written only when something shown actually changed (no layout per frame)
-  const html = `${fmtScore(Math.floor(game.best || 0))} м<span>★ ${game.bank} · ${'●'.repeat(Math.max(0, JUMP.lives - (game.rescues || 0)))}${'○'.repeat(Math.min(JUMP.lives, game.rescues || 0))}</span>`;
+  // stars caught · the bubble while he carries it · the hop while it is charged
+  const html = `${fmtScore(Math.floor(game.best || 0))} м<span>★ ${game.bank}${game.bubble ? ' · 🫧' : ''}${game.hop ? ' · <b class="hop">↑ подскок</b>' : ''}</span>`;
   if (html !== hud.html) { hud.html = html; gScore.innerHTML = html; }
+  const cnt = game.need ? (game.lit >= game.need ? '✓' : `${game.lit}/${game.need}`) : '';
+  if (cnt !== hud.cnt) { hud.cnt = cnt; gCount.textContent = cnt; gCount.classList.toggle('full', cnt === '✓'); }
   const f = THREE.MathUtils.clamp((game.alt || 0) / JUMP.goal, 0, 1), fb = THREE.MathUtils.clamp((game.best || 0) / JUMP.goal, 0, 1);
   const fill = `scaleY(${fb.toFixed(3)})`, me = `${(f * 100).toFixed(1)}%`;
   if (fill !== hud.fill) { hud.fill = fill; gAltFill.style.transform = fill; }
   if (me !== hud.me) { hud.me = me; gAltMe.style.bottom = me; }
   if (!!game.dayStar !== hud.star) { hud.star = !!game.dayStar; gAltStar.classList.toggle('got', hud.star); }
 }
-const hud = { html: '', fill: '', me: '', star: null };
+const hud = { html: '', fill: '', me: '', star: null, cnt: null };
+const gCount = $('#gCount');
 function setSeries() {
   const g = game, n = g.series;
   gX2.textContent = n >= 3 ? `Идеально ×${n} · звёзды ×2` : n >= 1 ? `Идеально ×${n}` : '';
@@ -1024,8 +1040,8 @@ function jumpStar(x, y) {
   sp.userData = { kind: 'white', spin: (Math.random() - 0.5) * 2, base: sp.scale.x, age: Math.random() * 6, glow };
   return sp;
 }
-function jumpBonus(x, y) {
-  const kind = ['rocket', 'bubble', 'magnet'][Math.floor(Math.random() * 3)];
+// random power-ups are the rocket and the magnet; the bubble comes only on its own schedule (see jumpRow)
+function jumpBonus(x, y, kind = Math.random() < 0.5 ? 'rocket' : 'magnet') {
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: bonusTex[kind], transparent: true, depthWrite: false })); sp.scale.setScalar(0.5);
   sp.position.set(x, y, 0.2); scene.add(sp); game.bonuses.push({ sp, kind, t: Math.random() * 6 });
 }
@@ -1103,14 +1119,21 @@ function jumpRow() {
     } else if (g.holeRecent) g.holeRecent--;
   }
   if ((intro === 'crumble' || intro === 'hot' || intro === 'hole') && (type === 'move' || type === 'orbit' || orbitNext) && g.intro[0] !== intro) g.intro.unshift(intro);
-  if (intro === 'crumble' && risky) jumpStar(risky.grp.position.x, risky.grp.position.y + 0.75);   // shown with a reward on top
+  // the first rows carry a trail of three stars along the jump from the previous planet: the opening seconds
+  // teach "jump through the stars" and give the first lights of the constellation
+  if (g.rowN <= JUMP.trailRows) for (const t of [0.3, 0.55, 0.8]) jumpStar(THREE.MathUtils.lerp(g.lastX, x, t), THREE.MathUtils.lerp(g.nextY, y, t) + 0.9 + Math.sin(Math.PI * t));
+  else if (intro === 'crumble' && risky) jumpStar(risky.grp.position.x, risky.grp.position.y + 0.75);   // shown with a reward on top
   else if (Math.random() < L.star) {
     // half of the stars hang right above a trap: a tempting risk
     if (risky && risky.type === 'crumble' && Math.random() < 0.55) jumpStar(risky.grp.position.x, y + 0.75);
     else if (risky && risky.type === 'hot' && lv.idx > 3 && Math.random() < 0.4) jumpStar(risky.grp.position.x, y + 0.85);
     else jumpStar(THREE.MathUtils.clamp(x + (Math.random() - 0.5) * 1.8, -xm, xm), y - gap * 0.5 + 0.4);
   }
-  if (!calm && Math.random() < L.bonus) jumpBonus(THREE.MathUtils.clamp(x + (Math.random() - 0.5) * 1.4, -xm, xm), y + 0.9);
+  // the bubble is the only rescue: rare, on its own schedule, never while he carries one or one is on screen
+  if (rowAlt >= g.bubbleAt && type !== 'orbit' && !g.bubble && !g.bonuses.some((bo) => bo.kind === 'bubble')) {
+    jumpBonus(THREE.MathUtils.clamp(x + (Math.random() - 0.5) * 0.8, -xm, xm), y + 0.9, 'bubble');
+    g.bubbleAt = rowAlt + JUMP.bubble[1] * (1 + Math.random() * 0.5);
+  } else if (!calm && Math.random() < L.bonus) jumpBonus(THREE.MathUtils.clamp(x + (Math.random() - 0.5) * 1.4, -xm, xm), y + 0.9);
   g.nextY = y; g.lastX = x; g.lastType = type;
 }
 function spawnJumpMeteor() {
@@ -1145,7 +1168,8 @@ function jumpScroll(dy) {   // the world moves down instead of the camera moving
 }
 function jumpStart() {
   const g = game;
-  Object.assign(g, { plats: [], bonuses: [], holes: [], vy: 0, slip: 0, alt: 0, best: 0, scrolled: 0, level: 0, bank: JUMP.bank0, rescues: 0, series: 0, bestSeries: 0,
+  Object.assign(g, { plats: [], bonuses: [], holes: [], vy: 0, slip: 0, alt: 0, best: 0, scrolled: 0, level: 0, bank: 0, saves: 0, series: 0, bestSeries: 0,
+    bubbleAt: JUMP.bubble[0] + Math.random() * 12, hop: 1, nearT: 0, tipQ: [], recAt: getRecord(), recTip: false, recPassed: false, litTip: false, litDone: false, result: '',
     dashReady: false, face: Math.random() < 0.5 ? -1 : 1, spinT: 0, rocket: 0, bubble: false, magnet: 0, wind: 0, windT: 0, gustIn: 99, dayStar: false, dayShine: false, holeRecent: 0, perfects: 0,
     knock: 0, knockV: 0, scald: 0, vx: 0, rowN: 0, orbitIn: 4, tipped: {}, genLevel: 0, introLeft: 0, intro: [], lastType: 'planet', meteorSeen: false, falling: false, fallT: 0 });
   g.takeoffY = g.baseY;
@@ -1154,7 +1178,8 @@ function jumpStart() {
   const b = jumpBounds(); while (g.nextY < b.top + 2) jumpRow();
   // the star of the day: always visible (as a light at the top) until Ori reaches it
   const day = makeHeroStar(); scene.add(day); g.day = day;
-  if (!g.bubbleSp) { g.bubbleSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: bubbleTex, transparent: true, depthWrite: false })); g.bubbleSp.scale.setScalar(1.7); }
+  hud.recShow = null; hud.recY = null;
+  if (!g.bubbleSp) { g.bubbleSp =new THREE.Sprite(new THREE.SpriteMaterial({ map: bubbleTex, transparent: true, depthWrite: false })); g.bubbleSp.scale.setScalar(1.7); }
   scene.add(g.bubbleSp); g.bubbleSp.visible = false;
   setSeries(); updateScore();
 }
@@ -1166,7 +1191,6 @@ function jumpCleanup() {
   if (g.day) { scene.remove(g.day); g.day = null; }
   if (g.bubbleSp) g.bubbleSp.visible = false;
 }
-const rescuePrice = () => JUMP.rescue + 3 * (game.rescues || 0);   // every rescue costs more
 // the height he pushed off from: below it (minus a little) nothing can catch him any more
 function setTakeoff(y) { const g = game; g.takeoffY = y; g.falling = false; g.fallT = 0; }
 // where a paw touches a planet at a horizontal offset dx from its centre (a sphere, flat under the paws' width)
@@ -1175,11 +1199,10 @@ function jumpLose(why) {
   const g = game;
   try { navigator.vibrate && navigator.vibrate(90); } catch {}
   g.series = 0; g.dashReady = false; setSeries();
-  const price = rescuePrice();
-  // two rescues per run, and each one costs stars; after that a fall is the end of the run
-  if (g.rescues >= JUMP.lives) { sfx.play('lose'); gSay(`${why ? why + ' ' : ''}Спасений больше нет`, 1800); g.playing = false; startFinale(); return; }
-  if (g.bank < price) { sfx.play('lose'); gSay(`${why ? why + ' ' : ''}Не хватило звёзд на спасение (нужно ${price} ★)`, 1800); g.playing = false; startFinale(); return; }
-  g.bank -= price; g.rescues++; updateScore();
+  // no bubble: the fall ends the run
+  if (!g.bubble) { sfx.play('lose'); gSay(`${why ? why + ' ' : ''}Забег окончен`, 1800); g.playing = false; startFinale(); return; }
+  // the bubble catches him once: a lime planet comes up under him and he bounces back into the climb
+  g.bubble = false; g.bubbleSp.visible = false; g.saves++; updateScore();
   const b = jumpBounds(), y = b.bot + 1.0;
   // the rescue planet goes where nothing nasty hangs right above it (a hot dwarf there made an endless loop)
   const blocked = (x) => g.plats.some((q) => q.alive && (q.type === 'hot' || q.type === 'crumble') && Math.abs(q.grp.position.x - x) < 1.0 && q.grp.position.y > y && q.grp.position.y < y + 3.6)
@@ -1191,14 +1214,40 @@ function jumpLose(why) {
   if (spot !== null) x = spot; else clearSpot(x, y);
   const p = makePlatform('rescue', x, y);
   pivot.position.set(x, p.grp.position.y + p.top, 0); setTakeoff(pivot.position.y); pivot.rotation.z = 0; jumpBounce(JUMP.v0 * 1.15); g.invuln = 1.5;
-  gPop(`−${price} ★`, toScreen(p.grp.position), true); sfx.play('rescue');
-  gSay(`${why ? why + ' ' : ''}Спасение за ${price} ★ · ${JUMP.lives - g.rescues > 0 ? `осталось ${JUMP.lives - g.rescues} за ${rescuePrice()} ★` : 'это было последнее'}`, 1800);
+  meteorBurst(new THREE.Vector3(x, p.grp.position.y + 0.6, 0.3), 12, false); gPop('Пузырь!', toScreen(p.grp.position)); sfx.play('bubble'); sfx.play('rescue');
+  gSay(`${why ? why + ' ' : ''}Пузырь подхватил Ори`, 1800);
 }
 function jumpCollectStar(i) {
   const g = game, s = g.stars[i], at = toScreen(s.position); removeGameStar(i, true);
   if (catchLick.action) catchLick.action.reset().setEffectiveWeight(1).play();
   const n = g.series >= 3 ? 2 : 1; g.bank += n; g.wag = 0.7; g.caught++;
-  gPop(`+${n} ★`, at); updateScore(); sfx.play('star', n);
+  gPop(`+${n} ★`, at); lightStars(n, at); updateScore(); sfx.play('star', n);
+  if (!g.litTip) { g.litTip = true; tipLater('stars', 'Звёзды зажигают созвездие. Собери его до 100 м — звезда дня засияет'); }
+}
+// every star lights a third of a point of the constellation (the x2 series lights two thirds)
+function lightStars(n, from) {
+  const g = game;
+  for (let k = 0; k < n && g.lit < g.need; k++) { const idx = g.lit++; flyToSky(from, idx); }
+  if (g.lit < g.need || g.litDone) return;
+  g.litDone = true; sfx.play('level');
+  // completed after the star of the day was caught: it lights up now
+  if (g.dayStar && !g.dayShine) { g.dayShine = true; gEl.classList.add('done'); gSay('Созвездие собрано — звезда дня засияла!', 2200); }
+  else if (!g.dayStar) gSay('Созвездие собрано! Теперь — к звезде дня', 1800);
+}
+// a black hole takes lit halves back out of the constellation
+function unlightStars(n) {
+  const g = game; let k = 0;
+  for (; k < n && g.lit > 0; k++) { g.lit--; unlightUnit(g.lit); }
+  if (g.lit < g.need) g.litDone = false;
+  return k;
+}
+// tips wait until the line on screen has been read (a level title, a remark), then show one by one
+function tipLater(key, text, ms = 2600) { const g = game; if (g.tipped[key]) return; g.tipped[key] = true; g.tipQ.push([text, ms]); }
+function stepTips() { const g = game; if (g.tipQ.length && g.clock > (g.sayUntil || 0)) { const [text, ms] = g.tipQ.shift(); gSay(text, ms, true); } }
+// "on a hair": landing on the very edge of a planet, or a meteor flying past close, is worth a star
+function nearMiss(at) {
+  const g = game; if (g.clock < g.nearT) return; g.nearT = g.clock + 1.5;
+  g.bank++; lightStars(1, at); gPop('На волоске! +1 ★', at); sfx.play('star', 1); updateScore();
 }
 function jumpLand(p, top) {
   const g = game, dxp = pivot.position.x - p.grp.position.x;
@@ -1216,9 +1265,13 @@ function jumpLand(p, top) {
   const perfect = Math.abs(dxp) < JUMP.perfect && p.type !== 'ground';
   if (perfect) {
     g.series++; g.perfects++; g.bestSeries = Math.max(g.bestSeries, g.series);
-    gPop('Идеально!', toScreen(new THREE.Vector3(pivot.position.x, top + 0.9, 0))); sfx.play('perfect');
+    const refill = !g.hop; if (refill) { g.hop = 1; updateScore(); }   // a perfect landing refills the hop
+    gPop(refill ? 'Идеально! ↑ подскок' : 'Идеально!', toScreen(new THREE.Vector3(pivot.position.x, top + 0.9, 0))); sfx.play('perfect');
     if (g.series % 5 === 0) g.dashNow = true;
-  } else if (p.type !== 'ground') g.series = 0;
+  } else if (p.type !== 'ground') {
+    g.series = 0;
+    if (Math.abs(dxp) > JUMP.landW * JUMP.edge && p.type !== 'rescue') nearMiss(toScreen(new THREE.Vector3(pivot.position.x, top + 0.9, 0)));
+  }
   setSeries();
   let v = JUMP.v0;
   if (p.type === 'ring') { v = JUMP.v0 * JUMP.boost; sfx.play('ring'); }
@@ -1235,6 +1288,27 @@ function jumpLand(p, top) {
   if (p.type === 'ice' && p.hp <= 0) { p.alive = false; p.gone = 0.001; meteorBurst(new THREE.Vector3(p.grp.position.x, top, 0.25), 12, false); }
   return true;
 }
+// the previous record as a dashed line across the screen at its height: "3 m to go" as he nears it, a cheer when he passes
+function stepRecordLine() {
+  const g = game, rec = g.recAt;
+  let show = false;
+  if (rec >= 5 && !g.recPassed) {
+    if (g.best > rec) {
+      g.recPassed = true; gPop('Новый рекорд!', toScreen(new THREE.Vector3(pivot.position.x, pivot.position.y + 1.3, 0))); sfx.play('level');
+    } else {
+      // shown only below the header (logos, ✕) and above the hint line
+      const y = Math.round(toScreen(_v.set(0, g.baseY + rec - g.scrolled, 0)).y);
+      if (y > 130 && y < innerHeight - 90) {
+        show = true;
+        if (y !== hud.recY) { hud.recY = y; gRecLine.style.transform = `translate(-50%, ${y}px)`; }
+      }
+      const left = Math.ceil(rec - g.best);
+      if (!g.recTip && left <= 5) { g.recTip = true; gSay(`Ещё ${left} м до рекорда!`, 1600); }   // > 1.2 s: shown even over a tip
+    }
+  }
+  if (show !== hud.recShow) { hud.recShow = show; gRecLine.classList.toggle('show', show); if (show) gRecLabel.textContent = `Рекорд ${fmtScore(rec)} м`; }
+}
+const gRecLine = $('#gRecLine'), gRecLabel = $('#gRecLine span');
 function useBubble(what) { const g = game; g.bubble = false; g.bubbleSp.visible = false; sfx.play('bubble'); gSay(`Пузырь спас от ${what}!`, 900); meteorBurst(pivot.position.clone().add(new THREE.Vector3(0, 0.6, 0.2)), 10, false); }
 function jumpStep(dt) {
   const g = game, b = jumpBounds();
@@ -1269,6 +1343,8 @@ function jumpStep(dt) {
     return;
   }
   const body = pivot.position.clone(); body.y += 0.55;
+  if (g.clock > 7) tipLater('hop', 'Тапни в полёте — подскок вверх. Заряд даёт идеальное приземление');
+  stepTips(); stepRecordLine();
   // rocket: steady flight up
   if (g.rocket > 0) {
     g.rocket -= dt; g.vy = 9;
@@ -1323,8 +1399,6 @@ function jumpStep(dt) {
     gSay(lv.n < LEVELS.length - 1 ? `Уровень ${lv.n + 1} · ${L.name}` : `Уровень ${lv.n + 1} · ${L.name}${lv.extra ? ' +' + lv.extra : ''}`, 1800);
     g.meteorIn = Math.min(g.meteorIn, 3); if (L.gust) g.gustIn = Math.min(g.gustIn, 2.5); sfx.play('level');
   }
-  // the constellation lights up as he climbs toward the star of the day
-  while (g.lit < g.need && g.alt >= (g.lit + 1) * JUMP.goal / g.need) { const idx = g.lit++; flyToSky(toScreen(body), idx); }
   // the star of the day
   if (g.day) {
     const glowY = Math.min(g.dayY, b.top - 0.35), far = THREE.MathUtils.clamp((g.dayY - b.top) / 40, 0, 1);
@@ -1333,14 +1407,14 @@ function jumpStep(dt) {
     // near the goal the star drifts toward Ori; at 100 m it lands in his mouth wherever he is
     if (g.dayY < b.top) { g.dayX += (pivot.position.x - g.dayX) * Math.min(1, 2.5 * dt); }
     if (g.alt >= JUMP.goal - 0.2 || (g.dayY < b.top - 0.3 && Math.abs(body.x - g.dayX) < 1.0 && Math.abs(body.y - g.dayY) < 0.8)) {
-      g.dayStar = true; g.dayShine = g.rescues === 0;
+      g.dayStar = true; g.dayShine = g.lit >= g.need;
       const m = mouthWorld(); scene.remove(g.day); g.day = null;
       if (catchLick.action) catchLick.action.reset().setEffectiveWeight(1).play();
       for (let k = 0; k < 30; k++) { const a = Math.random() * Math.PI * 2, r = 1.4 + Math.random() * 1.8; const s = spawnFaller(m.x, m.y, m.z, new THREE.Vector3(Math.cos(a) * r, 0.4 + Math.random() * 1.6, Math.sin(a) * r * 0.5), 0.06 + Math.random() * 0.08, 0.7); s.material.color.set(Math.random() < 0.45 ? 0xd9f38b : 0xffffff); }
       flash.style.opacity = 0.6; setTimeout(() => { flash.style.opacity = 0; }, 180);
-      while (g.lit < g.need) { const idx = g.lit++; flyToSky(toScreen(m), idx); }
-      gEl.classList.add('done'); g.wag = 3; sfx.play('day');
-      gSay(g.dayShine ? 'Сияющая звезда дня! Дальше — за рекордом' : 'Звезда дня! Дальше — за рекордом', 2400);
+      if (g.dayShine) gEl.classList.add('done');
+      g.wag = 3; sfx.play('day');
+      gSay(g.dayShine ? 'Сияющая звезда дня! Дальше — за рекордом' : `Звезда дня! Дособери созвездие — она засияет (ещё ${g.need - g.lit} ★)`, 2600);
       updateScore();
     }
   }
@@ -1388,11 +1462,14 @@ function jumpStep(dt) {
       const at = toScreen(bo.sp.position); scene.remove(bo.sp); g.bonuses.splice(i, 1);
       sfx.play('bonus');
       if (bo.kind === 'rocket') { g.rocket = 3; gPop('Ракета!', at); play('leap', { fade: 0.05, speed: 0.6 }); }
-      if (bo.kind === 'bubble') { g.bubble = true; gPop('Пузырь!', at); }
+      if (bo.kind === 'bubble') { g.bubble = true; gPop('Пузырь!', at); updateScore(); if (!g.tipped.bubble) { g.tipped.bubble = true; gSay('Пузырь подхватит, если сорвёшься. И защитит от жара и метеорита', 2800, true); } }
       if (bo.kind === 'magnet') { g.magnet = 5; gPop('Магнит!', at); }
       continue;
     }
-    if (bo.sp.position.y < b.bot - 1) { scene.remove(bo.sp); g.bonuses.splice(i, 1); }
+    if (bo.sp.position.y < b.bot - 1) {
+      if (bo.kind === 'bubble' && !g.bubble) g.bubbleAt = Math.min(g.bubbleAt, g.nextY - g.baseY + g.scrolled + 12);   // missed it: another one soon
+      scene.remove(bo.sp); g.bonuses.splice(i, 1);
+    }
   }
   if (g.bubbleSp) { g.bubbleSp.visible = g.bubble; if (g.bubble) g.bubbleSp.position.set(pivot.position.x, pivot.position.y + 0.6, 0.35); }
   // black holes: pull; a close pass past the edge = boost; the centre = a fall
@@ -1412,7 +1489,7 @@ function jumpStep(dt) {
       // swallowed: spat out from the lowest planet on screen, three stars poorer, spinning
       let low = null; for (const q of g.plats) if (q.alive && q.type !== 'hot' && q.type !== 'crumble' && q.grp.position.y > b.bot + 0.3 && (!low || q.grp.position.y < low.grp.position.y)) low = q;
       if (!low) { pivot.position.y = b.bot - 1; jumpLose('Чёрная дыра!'); if (!g.playing) return; continue; }
-      const cost = Math.min(3, g.bank); g.bank -= cost; g.series = 0; g.dashReady = false; setSeries(); updateScore();
+      const cost = unlightStars(2); g.series = 0; g.dashReady = false; setSeries(); updateScore();
       meteorBurst(body.clone(), 10, false);
       pivot.position.set(low.grp.position.x, low.grp.position.y + low.top, 0); setTakeoff(pivot.position.y); jumpBounce(JUMP.v0); g.spinT = 0.7; g.invuln = 1.5;
       gPop(cost > 0 ? `−${cost} ★` : 'Выплюнуло!', toScreen(pivot.position), true); gSay('Чёрная дыра выплюнула Ори ниже', 1200); sfx.play('hole');
@@ -1456,6 +1533,9 @@ function jumpStep(dt) {
         try { navigator.vibrate && navigator.vibrate(80); } catch {}
         gSay('Метеорит сбил Ори с курса!', 1100); sfx.play('meteor'); continue;
       }
+      // a close pass that missed is "on a hair" (paid once the meteor has moved away again)
+      const dd = cp.distanceTo(mp);
+      if (dd < 0.75) mt.close = true; else if (mt.close && !mt.paid && dd > 0.9) { mt.paid = true; nearMiss(toScreen(mt.sp.position)); }
     }
     if (Math.abs(mt.sp.position.x) > b.xm + 2 || mt.sp.position.y < b.bot - 1) removeMeteor(i);
   }
@@ -1525,6 +1605,19 @@ function gamePose(dt) {
 function gameTap() {
   const g = game;
   if (g.finale) { if (g.hero && !g.tapped) g.tapped = { inWindow: g.tapWindow }; return; }
+  if (g.playing) hop();
+}
+// the mid-air hop: one charge, refilled by a perfect landing. It also saves a miss (he can hop while falling),
+// and the planet he hopped from no longer counts: any planet above the hop point (minus missDrop) will do
+function hop() {
+  const g = game;
+  if (!g.hop || g.rocket > 0 || g.knock > 0 || g.airT < 0.12) return;
+  g.hop = 0; g.tipped.hop = true;
+  g.vy = Math.max(g.vy, JUMP.hop); setTakeoff(pivot.position.y); g.airT = 0; g.airDur = 2 * g.vy / JUMP.g;
+  g.earV += 5; g.squash = 0.6;
+  play('leap', { fade: 0.05, speed: 1.4 }); sfx.play('sling');
+  for (let k = 0; k < 14; k++) { const a = Math.PI + Math.random() * Math.PI, f = spawnFaller(pivot.position.x, pivot.position.y + 0.05, 0.25, new THREE.Vector3(Math.cos(a) * 1.3, Math.sin(a) * 0.6, 0), 0.06, 0.4); f.material.color.set(0xd9f38b); }
+  updateScore();
 }
 
 function updateEyes(dt) {
