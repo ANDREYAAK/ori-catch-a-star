@@ -885,7 +885,7 @@ function gameStep(dt) {
 // hop = the take-off speed of the mid-air hop; edge = a landing this far off centre (share of landW) is "on a hair"
 const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 30, goal: 150, maxGap: 1.95, minGap: 1.15, speed: 3.6,
   orbitEvery: [4, 5], perfect: 0.13, introRows: 3, minSep: 1.1, holeSep: 1.45, missDrop: 0.45, landW: 0.46, foot: 0.14,
-  bubble: [18, 40], hop: 5.2, edge: 0.78, trailRows: 2 };
+  bubble: [18, 40], drift: 0.36, hop: 5.2, edge: 0.78, trailRows: 2 };
 // [a, b] = the value at the start and at the end of the level; meteor = seconds between meteors
 const LEVELS = [
   { name: 'Орбита', gap: [1.15, 1.4], dx: [1.0, 1.3], ring: 0.15, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, star: 0.5, bonus: 0.03 },
@@ -966,7 +966,7 @@ function setZone(i) {   // -1 = no zone (outside the game)
   }
   document.body.style.setProperty('--zone', z ? z.accent : '#D9F38B');
   zoneStar.set(z ? z.star : '#dfe7ff');
-  if (!z) { starsFar.material.uniforms.uColor.value.set('#dfe7ff'); gGate.classList.remove('show'); hud.gateShow = false; }
+  if (!z) { starsFar.material.uniforms.uColor.value.set('#dfe7ff'); gGate.classList.remove('show'); hud.gateShow = false; gWind.className = ''; hud.wind = ''; }
 }
 function stepZone(dt, b) {
   const g = game, z = ZONES[zoneIdx];
@@ -979,13 +979,13 @@ function stepZone(dt, b) {
   }
 }
 // the gate: a glowing line with the level's name at every 20 m, in that level's colour; Ori flies through it
-const gGate = $('#gGate'), gGateLabel = $('#gGate span');
+const gGate = $('#gGate'), gGateLabel = $('#gGate span'), gWind = $('#gWind'), gLvl = $('#gLvl');
 function stepGate() {
   const g = game; let show = false;
   for (const n of [g.level + 1, g.level]) {
     if (n < 1) continue;
     const y = Math.round(toScreen(_v.set(0, g.baseY + n * JUMP.levelH - g.scrolled, 0)).y);
-    if (y < 285 || y > innerHeight - 100) continue;   // below the HUD (score, constellation, series pill), above the hint line
+    if (y < 300 || y > innerHeight - 100) continue;   // below the HUD (score, constellation, series pill), above the hint line
     show = true;
     if (y !== hud.gateY) { hud.gateY = y; gGate.style.transform = `translate(-50%, ${y}px)`; }
     if (n !== hud.gateN) {
@@ -1027,7 +1027,7 @@ function updateScore() {
   if (me !== hud.me) { hud.me = me; gAltMe.style.bottom = me; }
   if (!!game.dayStar !== hud.star) { hud.star = !!game.dayStar; gAltStar.classList.toggle('got', hud.star); }
 }
-const hud = { html: '', fill: '', me: '', star: null, cnt: null, lab: '★', gateY: null, gateN: null, gateShow: false };
+const hud = { html: '', fill: '', me: '', star: null, cnt: null, lab: '★', gateY: null, gateN: null, gateShow: false, wind: '' };
 const gCount = $('#gCount');
 function setSeries() {
   const g = game, n = g.series;
@@ -1388,7 +1388,7 @@ function jumpStart() {
   const b = jumpBounds(); while (g.nextY < b.top + 2) jumpRow();
   // the star of the day: always visible (as a light at the top) until Ori reaches it
   const day = makeHeroStar(); scene.add(day); g.day = day;
-  hud.recShow = null; hud.recY = null; hud.gateY = null; hud.gateN = null; setZone(0);
+  hud.recShow = null; hud.recY = null; hud.gateY = null; hud.gateN = null; setZone(0); gLvl.textContent = levelTitle(0);
   if (!g.bubbleSp) { g.bubbleSp =new THREE.Sprite(new THREE.SpriteMaterial({ map: bubbleTex, transparent: true, depthWrite: false })); g.bubbleSp.scale.setScalar(1.7); }
   scene.add(g.bubbleSp); g.bubbleSp.visible = false;
   setSeries(); updateScore();
@@ -1553,7 +1553,9 @@ function jumpStep(dt) {
   g.clock = (g.clock || 0) + dt;
   if (g.invuln > 0) g.invuln -= dt; if (g.wag > 0) g.wag -= dt;
   // steering: follow the finger with a capped speed (+ wind gusts, + sliding off ice)
-  const tx = THREE.MathUtils.clamp(g.targetX, -b.xm, b.xm), dx = tx - pivot.position.x;
+  // wind carries him off course: the point he flies to is shifted downwind (about a planet's width in a full gust),
+  // so the finger has to lead into the wind. (A plain push was eaten by the steering: he kept up with the finger anyway.)
+  const tx = THREE.MathUtils.clamp(THREE.MathUtils.clamp(g.targetX, -b.xm - 0.6, b.xm + 0.6) + (g.wind || 0) * JUMP.drift, -b.xm, b.xm), dx = tx - pivot.position.x;
   const x0 = pivot.position.x;
   if (g.knock > 0) { g.knock -= dt; pivot.position.x += g.knockV * dt; g.knockV *= Math.max(0, 1 - 4 * dt); }   // knocked: the finger is ignored
   else { const steer = g.scald > 0 ? 0.5 : g.falling ? 0.3 : 1; pivot.position.x += Math.sign(dx) * Math.min(Math.abs(dx), JUMP.speed * steer * dt, Math.abs(dx) * 12 * steer * dt); }
@@ -1571,7 +1573,7 @@ function jumpStep(dt) {
   if (g.spinT > 0) { g.spinT -= dt; wantYaw += (1 - g.spinT / 0.7) * Math.PI * 2 * (g.face || 1); pivot.rotation.y = wantYaw; }
   else { pivot.rotation.y = Math.atan2(Math.sin(pivot.rotation.y), Math.cos(pivot.rotation.y)); let dyw = wantYaw - pivot.rotation.y; dyw = Math.atan2(Math.sin(dyw), Math.cos(dyw)); pivot.rotation.y += dyw * Math.min(1, 7 * dt); }
   pivot.rotation.x = 0;
-  pivot.rotation.z = g.playing ? g.lean + (g.falling ? -(g.face || 1) * Math.min(1.1, g.fallT * 2.2) : 0) : 0;
+  pivot.rotation.z = g.playing ? g.lean - (g.wind || 0) * 0.085 + (g.falling ? -(g.face || 1) * Math.min(1.1, g.fallT * 2.2) : 0) : 0;
   pivot.position.z += (0 - pivot.position.z) * ease(0.12, dt);
   if (!g.playing) {
     // before the start / after the run: stand (or drop) onto the pedestal
@@ -1634,7 +1636,7 @@ function jumpStep(dt) {
   const lv = jumpLevel();
   if (lv.n > g.level) {
     g.level = lv.n; const L = levelDef(lv.n); setZone(zoneOf(lv.n));
-    gSay(levelTitle(lv.n), 1800); if (L.tip) g.tipQ.push([L.tip, 2200]);   // a lap says what it bends
+    gLvl.textContent = levelTitle(lv.n); gSay(levelTitle(lv.n), 1800); if (L.tip) g.tipQ.push([L.tip, 2200]);   // a lap says what it bends
     g.meteorIn = Math.min(g.meteorIn, 3); if (L.gust) g.gustIn = Math.min(g.gustIn, 2.5); sfx.play('level');
   }
   // the star of the day
@@ -1669,7 +1671,7 @@ function jumpStep(dt) {
     if (p.spin) { p.body.rotation.z += p.spin * dt; p.spin *= Math.max(0, 1 - 2.5 * dt); if (Math.abs(p.spin) < 0.05) p.spin = 0; }   // an asteroid wobbles from the push
     if (p.alive && p.skin > 0) {
       const px = p.grp.position.x, py = p.grp.position.y;
-      if (p.skin === 3) for (let k = 0, n = emit(0.07, dt); k < n; k++) { const f = spawnFaller(px + rnd(-0.22, 0.22), py + rnd(0.2, 0.36), -0.3, new THREE.Vector3(rnd(-0.1, 0.1), rnd(0.3, 0.55), 0), rnd(0.07, 0.13), rnd(1.2, 2)); f.material.color.set(0x8f8088); f.userData.fin = 0.4; }   // smoke
+      if (p.skin === 3) for (let k = 0, n = emit(0.07, dt); k < n; k++) { const f = spawnFaller(px + rnd(-0.22, 0.22), py + rnd(0.2, 0.36), -0.3, new THREE.Vector3(rnd(-0.1, 0.1) + g.wind * 0.5, rnd(0.3, 0.55), 0), rnd(0.07, 0.13), rnd(1.2, 2)); f.material.color.set(0x8f8088); f.userData.fin = 0.4; }   // smoke
       else if (p.skin === 2) for (let k = 0, n = emit(0.05, dt); k < n; k++) { const f = spawnFaller(px + rnd(-0.42, 0.42), py + rnd(-0.1, 0.4), -0.3, new THREE.Vector3(rnd(-0.08, 0.08), -rnd(0.1, 0.25), 0), rnd(0.03, 0.045), rnd(1, 1.8)); f.material.color.set(0xeaf8ff); f.userData.fin = 0.3; }   // snow
       else if (p.skin === 1) for (let k = 0, n = emit(0.025, dt); k < n; k++) { const f = spawnFaller(px + rnd(-0.45, 0.45), py + rnd(-0.3, 0.3), -0.3, new THREE.Vector3(rnd(-0.2, 0.2), rnd(-0.12, 0.05), 0), rnd(0.03, 0.05), rnd(1.2, 2)); f.material.color.set(0xb9a79a); f.userData.fin = 0.3; }   // dust
       else if (p.skin === 4) for (let k = 0, n = emit(0.045, dt); k < n; k++) { const a = rnd(0, 6.28), f = spawnFaller(px + Math.cos(a) * 0.52, py + Math.sin(a) * 0.52, -0.3, new THREE.Vector3(-Math.sin(a) * 0.3, Math.cos(a) * 0.3, 0), rnd(0.03, 0.05), rnd(0.8, 1.4)); f.material.color.set(Math.random() < 0.7 ? 0xb39cff : 0xd9f38b); f.userData.fin = 0.3; }   // motes circling
@@ -1677,7 +1679,7 @@ function jumpStep(dt) {
     if (p.type === 'hot') {
       // the dwarf blazes: a pulsing corona and tongues of flame, so it is never mistaken for a planet to land on
       if (p.glow) p.glow.scale.setScalar(1.2 + 0.1 * Math.sin(g.clock * 5 + p.x0 * 7));
-      for (let k = 0, n = emit(0.14, dt); k < n; k++) { const a = rnd(0.3, 2.84), f = spawnFaller(p.grp.position.x + Math.cos(a) * 0.36, p.grp.position.y + Math.sin(a) * 0.36, -0.3, new THREE.Vector3(Math.cos(a) * 0.25, 0.35 + Math.sin(a) * 0.4, 0), rnd(0.05, 0.09), rnd(0.5, 0.9)); f.material.color.set(Math.random() < 0.5 ? 0xff4a1c : 0xffb347); }
+      for (let k = 0, n = emit(0.14, dt); k < n; k++) { const a = rnd(0.3, 2.84), f = spawnFaller(p.grp.position.x + Math.cos(a) * 0.36, p.grp.position.y + Math.sin(a) * 0.36, -0.3, new THREE.Vector3(Math.cos(a) * 0.25 + g.wind * 0.45, 0.35 + Math.sin(a) * 0.4, 0), rnd(0.05, 0.09), rnd(0.5, 0.9)); f.material.color.set(Math.random() < 0.5 ? 0xff4a1c : 0xffb347); }
       p.body.rotation.y += dt * 0.6; if (p.steam > 0) { p.steam -= dt; for (let k = 0, n = emit(6, dt); k < n; k++) { const f = spawnFaller(p.grp.position.x + (Math.random() - 0.5) * 0.6, p.grp.position.y + 0.3, 0.3, new THREE.Vector3((Math.random() - 0.5) * 0.3, 1.2 + Math.random(), 0), 0.07, 0.6); f.material.color.set(0xffd7c2); } } }
     if (p.gone > 0) {
       p.gone += dt;
@@ -1760,7 +1762,7 @@ function jumpStep(dt) {
     if (!g.gustOn) { g.gustOn = true; g.gustIn = 2; }
     g.gustIn -= dt;
     if (g.gustIn <= 0 && g.windT <= 0) {
-      g.windDir = Math.random() < 0.5 ? -1 : 1; g.windT = 2.4; g.gustIn = L.gust * (0.8 + Math.random() * 0.5); sfx.play('wind');
+      g.windDir = Math.random() < 0.5 ? -1 : 1; g.windT = 2.6; g.gustIn = L.gust * (0.8 + Math.random() * 0.5); sfx.play('wind');
       // the first gust is a weak one, with a line about it
       g.windAmp = g.gustSeen ? 2.3 : 1.3;
       if (!g.gustSeen) { g.gustSeen = true; gSay(`Солнечный ветер сносит ${g.windDir > 0 ? 'вправо →' : '← влево'} Рули против него`, 2400, true); }
@@ -1768,10 +1770,15 @@ function jumpStep(dt) {
     }
   }
   if (g.windT > 0) {
-    g.windT -= dt; const ramp = Math.min(1, (2.4 - g.windT) / 0.6) * Math.min(1, g.windT / 0.4);
+    g.windT -= dt; const ramp = Math.min(1, (2.6 - g.windT) / 0.9) * Math.min(1, g.windT / 0.4);
     g.wind = g.windDir * g.windAmp * Math.max(0, ramp);
-    for (let k = 0, n = emit(0.8, dt); k < n; k++) { const f = spawnFaller(-g.windDir * (b.xm + 1.2), b.bot + Math.random() * (b.top - b.bot), 0.4, new THREE.Vector3(g.windDir * 6, 0, 0), 0.03, 0.6); f.material.color.set(0xdfe7ff); }
-  } else g.wind = 0;
+    // long streaks across the whole screen (each is a short row of points flying together), from the first moment of the gust
+    for (let k = 0, n = emit(1.1, dt); k < n; k++) {
+      const y = b.bot + Math.random() * (b.top - b.bot), z = rnd(-0.6, 0.5), v = g.windDir * rnd(6, 9), x0 = -g.windDir * (b.xm + 1.4);
+      for (let i = 0; i < 6; i++) { const f = spawnFaller(x0 - g.windDir * i * 0.09, y, z, new THREE.Vector3(v, 0, 0), 0.05 - i * 0.006, 0.55); f.material.color.set(i < 2 ? 0xffffff : 0xdfe7ff); }
+    }
+    const w = g.windDir > 0 ? 'r' : 'l'; if (hud.wind !== w) { hud.wind = w; gWind.className = 'on ' + w; }
+  } else { g.wind = 0; if (hud.wind) { hud.wind = ''; gWind.className = ''; } }
   // flying meteors
   const dNow = THREE.MathUtils.clamp((g.alt - lv.n * JUMP.levelH) / JUMP.levelH, 0, 1), every = g.alt >= FEATURE_AT.meteor * JUMP.levelH ? lvl(L.meteor, dNow) : 0;
   if (every > 0) { g.meteorIn -= dt; if (g.meteorIn <= 0) { spawnJumpMeteor(); g.meteorIn = Math.max(L.meteorMin || 4.5, every * Math.pow(0.92, lv.extra)) * (0.8 + Math.random() * 0.4); } }
