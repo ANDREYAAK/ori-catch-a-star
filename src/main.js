@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import BOW from './bow.json';   // the play bow: a clip keyed in Blender on the web rig (ori.glb), kept apart from the model
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';   // the model is meshopt-compressed (~4x smaller)
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -29,7 +28,6 @@ const CLIPS = {
   sit:        { a: 1098, b: 1146, loop: true },
   sitUp:      { a: 1146, b: 1166 },
   belly:      { a: 1230, b: 1326 },
-  bow:        { a: 0, b: BOW.frames, extra: BOW },   // not a part of the model's own action: built from its own tracks
 };
 // BELLY v2 lies with a straight back on the floor without squashing the torso: morph target Flat stays at 0
 const flatAt = () => 0;
@@ -344,12 +342,6 @@ function makeAction(gltfClip, name) {
   return act;
 }
 
-// a clip that came apart from the model: { times, tracks: [{ bone, path, values }] } in the model's own bone space
-function extraAction(data, name) {
-  const tracks = data.tracks.map((t) => new (t.path === 'quaternion' ? THREE.QuaternionKeyframeTrack : THREE.VectorKeyframeTrack)(`${THREE.PropertyBinding.sanitizeNodeName(t.bone)}.${t.path}`, data.times, t.values));
-  const act = mixer.clipAction(new THREE.AnimationClip(name, data.times[data.times.length - 1], tracks));
-  act.setLoop(THREE.LoopOnce, Infinity); act.clampWhenFinished = true; return act;
-}
 function play(name, { fade = 0.25, onDone, speed = 1 } = {}) {
   const next = actions[name]; if (!next) return;
   if (current && current !== next) current.fadeOut(fade);
@@ -387,7 +379,7 @@ async function loadModel() {
       ori.position.set(-ctr.x, 0, -ctr.z);
       mixer = new THREE.AnimationMixer(ori);
       const clip = gltf.animations[0];
-      for (const k in CLIPS) actions[k] = CLIPS[k].extra ? extraAction(CLIPS[k].extra, k) : makeAction(clip, k);
+      for (const k in CLIPS) actions[k] = makeAction(clip, k);
       // additive overlays: only the listed bones, relative to a rest frame (rng.ref)
       const additive = (name, rng, keep) => {
         const sub = THREE.AnimationUtils.subclip(clip, name, rng.a, rng.b, FPS);
@@ -641,7 +633,6 @@ const sfx = (() => {
     try {
       switch (name) {
         case 'bounce': { const k = Math.min(1.6, Math.max(0.6, arg || 1)); tone(180 * k, { type: 'triangle', f1: 330 * k, t: 0.14, vol: 0.35 }); noise({ t: 0.05, vol: 0.12, f: 600 }); break; }
-        case 'yip': tone(640, { type: 'sawtooth', f1: 400, t: 0.1, vol: 0.22 }); tone(980, { type: 'triangle', f1: 620, t: 0.08, vol: 0.14 }); noise({ t: 0.06, vol: 0.14, f: 1500, type: 'bandpass', q: 1.2 }); break;
         case 'weak': tone(150, { type: 'triangle', f1: 120, t: 0.16, vol: 0.28 }); break;
         case 'perfect': tone(880, { t: 0.12, vol: 0.25 }); tone(1320, { t: 0.18, vol: 0.22, delay: 0.06 }); break;
         case 'star': { const n = Math.min(4, arg || 1); tone(1046 * Math.pow(1.06, n), { t: 0.16, vol: 0.28 }); tone(1568 * Math.pow(1.06, n), { t: 0.22, vol: 0.18, delay: 0.05 }); break; }
@@ -2201,10 +2192,7 @@ function updateEyes(dt) {
   const hs = headScreen();
   let tx = 0, ty = 0;
   eyes.hold = Math.max(0, (eyes.hold || 0) - dt);
-  if (hs && beg.look) {   // asking for the ball: his eyes go from the ball to the viewer and back
-    if (beg.look === 'ball' && fetch_.ball) { const bp = toScreen(fetch_.ball.position); tx = THREE.MathUtils.clamp((bp.x - hs.x) / (innerWidth * 0.3), -1, 1); ty = THREE.MathUtils.clamp((hs.y - bp.y) / (innerHeight * 0.25), -1, 1); }
-    else { tx = 0; ty = 0.1; }
-  } else if (hs && pointer.x >= 0 && (!isMobile || eyes.hold > 0)) {
+  if (hs && pointer.x >= 0 && (!isMobile || eyes.hold > 0)) {
     tx = THREE.MathUtils.clamp((pointer.x - hs.x) / (innerWidth * 0.35), -1, 1);
     ty = THREE.MathUtils.clamp((hs.y - pointer.y) / (innerHeight * 0.3), -1, 1);
   } else {
@@ -2488,7 +2476,7 @@ function updatePant(dt) {
 /* ---------- sit when left alone ---------- */
 const sit = { state: 'stand', idle: 0, pending: null };
 function sitReady() {
-  return !busy && !beg.on && !game.on && !fetch_.mode && !petting && !phys.on && !phys.grab && !pointer.down && current === actions.idle;
+  return !busy && !game.on && !fetch_.mode && !petting && !phys.on && !phys.grab && !pointer.down && current === actions.idle;
 }
 function updateSit(dt) {
   if (sit.state !== 'stand') return;
@@ -2516,98 +2504,6 @@ function wake(then) {
   sit.state = 'up';
   play('sitUp', { fade: 0.2, onDone: done });
   return false;
-}
-
-/* ---------- left alone, he asks for the ball ---------- */
-// 1. he fetches the ball (one rolls in if there is none yet) and puts it down in front of the viewer
-// 2. he looks at the ball, at the viewer, tilts his head; a thought of the ball hangs over him
-// 3. still nothing: he turns to the ball, nudges it with his nose, drops into a play bow and yips
-// 4. meanwhile the "Бросить мяч" button pulses, and a tap anywhere throws the ball there at once
-// Any input stops it (begStop). The poses are procedural offsets on top of the clips: the rig has no bow of its own.
-const BEG = { first: 7, again: 12, clip: false };   // clip: the Blender bow is OFF (Andrey, 2026-11-16: the body deforms badly in it)
-const beg = { idle: 0, on: false, stage: 0, look: null, tilt: 0, tiltTo: 0, bow: 0, bowTo: 0, snap: 0, cycles: 0, tok: 0, tap: 0 };
-const begBubble = $('#begBubble');
-const begQuiet = () => !busy && !game.on && !fetch_.mode && !petting && !phys.on && !phys.grab && !pointer.down && (frame === 's1' || frame === 's3') && !document.hidden
-  && (current === actions.idle || current === actions.sit || current === actions.sitDown);
-function begOff() { if (actions.bow && current === actions.bow) play('idle', { fade: 0.3 });
-  beg.on = false; beg.stage = 0; beg.look = null; beg.tiltTo = 0; beg.bowTo = 0; begBubble.classList.remove('on'); document.body.classList.remove('beg'); }
-function begStop() {
-  beg.idle = 0; if (!beg.on) return;
-  beg.tok++; if (beg.stage === 3 && !busy) fetch_.yaw = null;
-  begOff();
-}
-function yip() { beg.snap = 0.22; sfx.play('yip'); }
-async function begRun() {
-  const tok = ++beg.tok, alive = () => beg.on && beg.tok === tok;
-  beg.on = true; beg.idle = 0; beg.cycles++;
-  try {
-    if (sit.state !== 'stand') { wake(); while (alive() && sit.state !== 'stand') await wait(60); await wait(200); }
-    if (!alive()) return;
-    // 1. the ball: one rolls in from the side the first time; then he runs to it and brings it to the front
-    let ball = fetch_.ball && fetch_.ball.parent === scene ? fetch_.ball : null;
-    if (!ball) {
-      if (fetch_.ball) scene.remove(fetch_.ball);
-      ball = makeBall(); fetch_.ball = ball; scene.add(ball);
-      const side = Math.random() < 0.5 ? -1 : 1; ball.position.set(side * 1.3, floorY(), pivot.position.z + 0.3);
-      phys.on = true; phys.v.set(-side * 1.5, 0, 0.05); phys.vy = 0; phys.chase = false;
-      await wait(600); if (!alive()) return;
-    }
-    const near = Math.hypot(ball.position.x - pivot.position.x, ball.position.z - pivot.position.z) < 0.7 && ball.position.z > pivot.position.z + 0.2;
-    if (!near || phys.on) { await chaseBall(); await wait(250); }
-    if (!alive()) return;
-    // 2. he asks
-    beg.stage = 2; document.body.classList.add('beg'); begBubble.classList.add('on');
-    for (let i = 0; i < 4 && alive(); i++) { const you = i % 2 === 1; beg.look = you ? 'you' : 'ball'; beg.tiltTo = you ? (i === 1 ? 0.3 : -0.3) : 0; await wait(you ? 1500 : 900); }
-    if (!alive()) return;
-    // 3. he insists: turns to the ball, nudges it, bows, yips
-    beg.stage = 3; beg.look = 'ball'; beg.tiltTo = 0;
-    const baseY = frame === 's1' ? -0.35 : frame === 's3' ? -0.5 : -0.2, dx = ball.position.x - pivot.position.x, dz = ball.position.z - pivot.position.z;
-    fetch_.yaw = Math.atan2(dx, dz) - baseY; await wait(450); if (!alive()) return;
-    const nudge = () => { if (!phys.on && ball.parent === scene) { phys.on = true; phys.chase = false; phys.v.set(Math.sign(dx || 1) * 0.12, 0, 0.3); phys.vy = 0.5; } };   // the ball hops and rolls a little toward the viewer
-    if (BEG.clip && actions.bow) {   // the real play bow (2.3 s): down at 0.45 s, held with a wiggle of the rump, up again at 1.9 s
-      const done = playAsync('bow', 0.2);
-      await wait(500); if (!alive()) return; nudge();
-      await wait(250); if (!alive()) return; beg.look = 'you'; yip();
-      await wait(420); if (!alive()) return; yip();
-      await done; if (!alive()) return; play('idle', { fade: 0.35 }); fetch_.yaw = null; await wait(500); if (!alive()) return;
-    } else {   // no clip: the same idea as offsets on the bones
-      beg.bowTo = 1; await wait(520); if (!alive()) return; nudge();
-      await wait(650); if (!alive()) return;
-      beg.look = 'you'; yip(); await wait(420); if (!alive()) return;
-      yip(); await wait(1100); if (!alive()) return;
-      beg.bowTo = 0; fetch_.yaw = null; await wait(600); if (!alive()) return;
-    }
-    beg.tiltTo = 0.25; await wait(2200);   // and waits, head to one side
-  } catch (e) { console.error('beg', e); }
-  finally { if (beg.tok === tok) { if (beg.stage === 3 && !busy) fetch_.yaw = null; begOff(); beg.idle = 0; } }
-}
-function updateBeg(dt) {
-  if (beg.on) {
-    const hs = headScreen(); if (hs) begBubble.style.transform = `translate(${Math.round(hs.x + 34)}px, ${Math.round(hs.y - 96)}px)`;
-    return;
-  }
-  if (!begQuiet()) { if (busy || game.on || pointer.down || fetch_.mode) beg.idle = 0; return; }
-  beg.idle += dt;
-  if (beg.idle >= (beg.cycles ? BEG.again : BEG.first)) begRun();
-}
-// per frame, after the mixer: the head tilt, the play bow, the yip
-function begPose(dt) {
-  beg.tilt += (beg.tiltTo - beg.tilt) * Math.min(1, dt * 5); beg.bow += (beg.bowTo - beg.bow) * Math.min(1, dt * 5);
-  const t = beg.tilt, k = beg.bow;
-  if (Math.abs(t) > 0.002) { life('head', 0, 0, t); life('neck', 0, 0, t * 0.4); }
-  if (beg.look === 'ball' && k < 0.3) { life('neck', 0.14, 0, 0); life('head', 0.16, 0, 0); }   // looking down at it
-  if (k > 0.002) {   // the play bow: chest to the floor on folded front legs, rump stays up, head lifted to the viewer
-    life('spine', 0.3 * k, 0, 0); life('chest', 0.34 * k, 0, 0);
-    life('neck', -0.3 * k, 0, 0); life('head', -0.28 * k, 0, 0);
-    life('f_upperL', -1.0 * k, 0, 0); life('f_upperR', -1.0 * k, 0, 0); life('f_lowerL', 0.75 * k, 0, 0); life('f_lowerR', 0.75 * k, 0, 0);
-    life('ear1L', -0.25 * k, 0, 0); life('ear1R', -0.25 * k, 0, 0);
-  }
-  if (beg.snap > 0 && jawBone && headBone) {
-    const q = Math.sin(Math.PI * (1 - beg.snap / 0.22));
-    _gq.setFromAxisAngle(_gx, 0.5 * q); procApply(jawBone, _gq);
-    _gq.setFromAxisAngle(_gx, -0.16 * q); procApply(headBone, _gq);
-    beg.snap -= dt;
-  }
 }
 
 /* ---------- commands (training demo) ---------- */
@@ -2655,9 +2551,9 @@ document.querySelectorAll('.cmds').forEach((row) => {
 });
 
 let pointer = { x: -1, y: -1, down: false };
-addEventListener('pointerdown', () => { beg.tap = beg.on && beg.stage >= 2 && !busy ? performance.now() : 0; begStop(); wake(); }, true);
-addEventListener('keydown', () => { begStop(); wake(); }, true);
-addEventListener('wheel', () => { begStop(); wake(); }, { capture: true, passive: true });
+addEventListener('pointerdown', () => wake(), true);
+addEventListener('keydown', () => wake(), true);
+addEventListener('wheel', () => wake(), { capture: true, passive: true });
 addEventListener('pointermove', () => { if (sit.state === 'stand') sit.idle = 0; }, true);
 addEventListener('pointermove', (e) => {
   if (game.on) {
@@ -2721,9 +2617,7 @@ function onPointerEnd(e) {
     return;
   }
   pointer.down = false; spin.dragging = false;
-  // a tap throws the ball there: when the button was armed, or while he was asking for it
-  const asked = beg.tap && performance.now() - beg.tap < 700; beg.tap = 0;
-  if (e.type === 'pointerup' && (fetch_.mode || asked) && spin.moved < 10 && e.target === canvas) throwBall(e.clientX, e.clientY);
+  if (e.type === 'pointerup' && fetch_.mode && spin.moved < 10 && e.target === canvas) throwBall(e.clientX, e.clientY);
 }
 addEventListener('pointerup', onPointerEnd);
 addEventListener('pointercancel', onPointerEnd);
@@ -2817,11 +2711,11 @@ function tick(_ts, simDt) {
       const k = w > 0 ? w * flatAt(CLIPS.belly.a + ba.time * FPS) : 0;
       for (const m of flatMeshes) m.morphTargetInfluences[m.morphTargetDictionary.Flat] = k;
     }
-    if (game.on) gamePose(dt); else begPose(dt);
+    if (game.on) gamePose(dt);
     if (holdJaw && jawBone) { const e = new THREE.Euler().setFromQuaternion(jawBone.quaternion, 'XYZ'); if (e.x < JAW_HOLD) { e.x = JAW_HOLD; jawBone.quaternion.setFromEuler(e); } }
     // tail wag on top of the clips
     const _ba = actions.belly, bellyK = _ba && _ba.isRunning() ? bellyWagK(CLIPS.belly.a + _ba.time * FPS) : 1;
-    const wagAmp = bellyK * THREE.MathUtils.degToRad(petting || beg.on || (game.on && game.wag > 0) ? tail.amp * 2.2 : sit.state === 'sitting' ? tail.amp * 0.3 : tail.amp), wagT = t * (petting || beg.stage >= 2 ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
+    const wagAmp = bellyK * THREE.MathUtils.degToRad(petting || (game.on && game.wag > 0) ? tail.amp * 2.2 : sit.state === 'sitting' ? tail.amp * 0.3 : tail.amp), wagT = t * (petting ? tail.speed * 1.8 : tail.speed) * Math.PI * 2;
     for (let i = 0; i < 5; i++) {
       const b = tail.bones[i]; if (!b) continue;
       const z = wagAmp * tail.gains[i] * Math.sin(wagT - tail.lags[i]);
@@ -2840,7 +2734,7 @@ function tick(_ts, simDt) {
     }
     if (!timeUnis) { timeUnis = []; ori.traverse((o) => { if (o.isMesh && o.material.userData.uni) timeUnis.push(o.material.userData.uni); }); }   // collected once, not every frame
     for (const u of timeUnis) u.uTime.value = t;
-    updateEyes(dt); updateBlink(dt); updateSit(dt); updatePant(dt); updateBeg(dt);
+    updateEyes(dt); updateBlink(dt); updateSit(dt); updatePant(dt);
     // touching the dog only rotates it: the pet reaction fired on every touch and read as a twitch,
     // so it is off (startPet/stopPet stay available for the command menu)
     if (petting) stopPet();
@@ -2867,7 +2761,7 @@ function tick(_ts, simDt) {
     phraseToday = saved.phrase; $('#phrase').textContent = saved.phrase; applyShine(saved.shine, saved.nova); showScreen('s3'); setFrame('s3');
   }
   play('idle');
-  window.__ori = { beg, get actions() { return actions; }, get mixer() { return mixer; }, play, game, tick, sim: (dt) => tick(0, dt), toScreen, startGame, camera, renderer, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, pant, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
+  window.__ori = { get actions() { return actions; }, get mixer() { return mixer; }, play, game, tick, sim: (dt) => tick(0, dt), toScreen, startGame, camera, renderer, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, pant, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
   tick();
   setTimeout(warmGame, 800);
 })();
