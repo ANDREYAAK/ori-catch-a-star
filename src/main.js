@@ -900,6 +900,8 @@ const LEVELS = [
   { name: 'Кольца гиганта', gap: [1.5, 1.8], dx: [1.5, 1.8], ring: 0, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, belt: [0.4, 0.6], star: 0.45, bonus: 0.05, tip: 'Обломки кольца узкие — целься точно' },
   // a storm nebula: soft clouds instead of planets (they spring him higher); later lightning strikes a column that glows first
   { name: 'Грозовая туманность', gap: [1.6, 1.9], dx: [1.7, 2.0], ring: 0, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, bolt: [5, 3.6], star: 0.45, bonus: 0.05, tip: 'Облака пружинят — подбрасывают выше' },
+  // a graveyard of satellites: wide, but only the middle holds (a panel tips under the paws and slides him off); later some of them spin
+  { name: 'Кладбище спутников', gap: [1.55, 1.85], dx: [1.7, 2.0], ring: 0, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, spinner: [0.3, 0.45], star: 0.45, bonus: 0.05, tip: 'Спутник кренится под лапами — садись на середину' },
 ];
 const lvl = (v, d) => Array.isArray(v) ? v[0] + (v[1] - v[0]) * d : v;
 // After the six levels (120 m) the climb goes on in LAPS of 20 m: deep space bent one way each time, in the sky of
@@ -923,13 +925,13 @@ const zoneOf = (n) => n <= LAST ? n : levelDef(n).zone;
 //   Орбита: planets, then the ringed planet · Пояс астероидов: meteorites, then flying meteors ·
 //   Ледяная туманность: ice, then drifting planets · Солнечный ветер: red dwarfs, then their wind ·
 //   Чёрные дыры: holes, then planets orbiting across the screen · Глубокий космос: everything together
-const STAGE_INTRO = [null, 'ring', 'crumble', 'meteor', 'ice', 'move', 'hot', 'gust', 'hole', 'orbit', null, null, 'alien', 'visit', null, 'belt', null, 'bolt'];
+const STAGE_INTRO = [null, 'ring', 'crumble', 'meteor', 'ice', 'move', 'hot', 'gust', 'hole', 'orbit', null, null, 'alien', 'visit', null, 'belt', null, 'bolt', null, 'spinner'];
 // where each thing first appears, in levels (1.5 = the middle of level 2). Nothing is generated before that
 const FEATURE_AT = Object.fromEntries(STAGE_INTRO.map((f, i) => [f, i / 2]).filter(([f]) => f));
-const MAIN_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'visit', 'belt']);                // shown as the row's own planet
-const ROW_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'crumble', 'hot', 'hole', 'alien', 'visit', 'belt']);   // meteors and wind are shown by jumpStep
+const MAIN_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'visit', 'belt', 'spinner']);                // shown as the row's own planet
+const ROW_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'crumble', 'hot', 'hole', 'alien', 'visit', 'belt', 'spinner']);   // meteors and wind are shown by jumpStep
 // a key star (a point of the constellation) hangs behind the thing its level is about
-const KEY_SIG = ['ring', 'crumble', 'ice', 'hot', 'hole', null, 'alien', null, null];   // by zone
+const KEY_SIG = ['ring', 'crumble', 'ice', 'hot', 'hole', null, 'alien', null, null, null];   // by zone
 // the first time a new thing comes into view, one line explains it
 const INTRO_TIP = {
   ring: 'Планета с кольцом подбрасывает намного выше',
@@ -942,6 +944,7 @@ const INTRO_TIP = {
   alien: 'Планета занята — пришелец отпихнёт. Ищи свободную',
   visit: 'Пришелец прилетает и улетает — прыгай, пока планета свободна',
   belt: 'Кольцо вращается: обломки плывут в одну сторону и несут Ори с собой',
+  spinner: 'Спутник вращается — прыгай, когда панели лежат ровно',
 };
 function tipOnce(key, y, b) {
   const g = game;
@@ -969,6 +972,8 @@ const ZONES = [
     amb: { n: 0.4, col: [0xffffff, 0xffe2b0], v: [0.55, 0], s: [0.02, 0.045], life: 4, sway: 0.1 } },   // ice dust of the ring, drifting along it
   { accent: '#C7B8FF', star: '#e6dcff', bg: zoneBg([[95, 40, 28, 22, 'rgba(150,130,255,.24)'], [95, 40, 76, 70, 'rgba(90,110,200,.22)']], '#3f3d70', '#1f2040', '#13142b', '#080814'),
     amb: { n: 0.45, col: [0xcfd0ff, 0x9aa0e0], v: [-0.3, -1.1], s: [0.02, 0.035], life: 2.2, sway: 0.05 } },   // slanting rain
+  { accent: '#7FF0E0', star: '#dff8ff', bg: zoneBg([[80, 34, 22, 24, 'rgba(90,220,230,.16)'], [80, 34, 80, 60, 'rgba(255,120,80,.1)']], '#22404a', '#111f2a', '#0b141c', '#04080c'),
+    amb: { n: 0.22, col: [0xffffff, 0x9fe8ff, 0xffc08a], v: [-0.22, -0.05], s: [0.02, 0.05], life: 4, sway: 0.12 } },   // glints of drifting junk
 ];
 const zoneEls = [...document.querySelectorAll('#zone i')], zoneStar = new THREE.Color('#dfe7ff');
 let zoneIdx = -1, zoneTop = 0;
@@ -981,7 +986,7 @@ function setZone(i) {   // -1 = no zone (outside the game)
   }
   document.body.style.setProperty('--zone', z ? z.accent : '#D9F38B');
   zoneStar.set(z ? z.star : '#dfe7ff');
-  if (!z) { starsFar.material.uniforms.uColor.value.set('#dfe7ff'); gGate.classList.remove('show'); hud.gateShow = false; gWind.className = ''; hud.wind = ''; if (giant) { giant.visible = false; giant.material.opacity = 0; } }
+  if (!z) { starsFar.material.uniforms.uColor.value.set('#dfe7ff'); gGate.classList.remove('show'); hud.gateShow = false; gWind.className = ''; hud.wind = ''; if (giant) { giant.visible = false; giant.material.opacity = 0; } if (earth) { earth.visible = false; earth.material.opacity = 0; } }
 }
 // the gas giant of zone 7: a huge banded planet with rings far behind everything (drawn once, shown only there)
 let giant = null;
@@ -999,7 +1004,27 @@ function makeGiant() {
   giant = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
   giant.scale.setScalar(5.4); giant.renderOrder = -2; giant.visible = false; scene.add(giant);
 }
+let earth = null;
+function makeEarth() {
+  const r2 = (a, b) => a + Math.random() * (b - a);
+  const tex = spriteTex((x, s) => { const c = s / 2, R = s * 0.42;
+    const halo = x.createRadialGradient(c, c, R * 0.96, c, c, R * 1.16); halo.addColorStop(0, 'rgba(120,220,255,.75)'); halo.addColorStop(1, 'rgba(120,220,255,0)'); x.fillStyle = halo; x.beginPath(); x.arc(c, c, R * 1.16, 0, 7); x.fill();
+    x.save(); x.beginPath(); x.arc(c, c, R, 0, 7); x.clip();
+    const sea = x.createRadialGradient(c, c - R * 0.5, R * 0.1, c, c, R); sea.addColorStop(0, '#3f8fe0'); sea.addColorStop(1, '#123a7a'); x.fillStyle = sea; x.fillRect(0, 0, s, s);
+    for (let i = 0; i < 16; i++) { x.fillStyle = Math.random() < 0.6 ? '#3f9a5a' : '#a08a5a'; x.globalAlpha = r2(0.6, 0.9); x.beginPath(); x.ellipse(r2(c - R, c + R), r2(c - R, c), r2(18, 60), r2(10, 30), r2(0, 3), 0, 7); x.fill(); }
+    x.globalAlpha = 0.75; x.strokeStyle = '#fff'; x.lineCap = 'round'; for (let i = 0; i < 16; i++) { x.lineWidth = r2(5, 14); const px = r2(c - R, c + R), py = r2(c - R, c + R * 0.2); x.beginPath(); x.moveTo(px, py); x.bezierCurveTo(px + 40, py - 14, px + 80, py + 14, px + r2(90, 150), py + r2(-10, 10)); x.stroke(); }
+    x.globalAlpha = 1; const sh = x.createLinearGradient(0, c - R, 0, c + R); sh.addColorStop(0, 'rgba(0,0,0,0)'); sh.addColorStop(0.5, 'rgba(4,8,20,.45)'); sh.addColorStop(1, 'rgba(4,8,20,.9)'); x.fillStyle = sh; x.fillRect(0, 0, s, s);
+    x.restore();
+  }, 512);
+  earth = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+  earth.scale.setScalar(12); earth.renderOrder = -2; earth.visible = false; scene.add(earth);
+}
 function stepZone(dt, b) {
+  if (zoneIdx === 9 && !earth) makeEarth();
+  if (earth) {   // only its lit top edge rises over the bottom of the screen
+    const want = zoneIdx === 9 ? 0.75 : 0; earth.material.opacity += (want - earth.material.opacity) * Math.min(1, 1.2 * dt); earth.visible = earth.material.opacity > 0.01;
+    earth.position.set(0.4, b.bot * 2 - 3.4 - (game.alt - 9 * JUMP.levelH) * 0.03, -7);
+  }
   if (zoneIdx === 7 && !giant) makeGiant();
   if (giant) {
     const want = zoneIdx === 7 ? 0.62 : 0; giant.material.opacity += (want - giant.material.opacity) * Math.min(1, 1.2 * dt); giant.visible = giant.material.opacity > 0.01;
@@ -1231,6 +1256,29 @@ const SKINS = [
 const CLOUD = { landW: 0.5, top: 0.22, spring: 1.16 };
 const cloudMat = [0xd6daf8, 0xc4c8f2, 0xe2def9].map((color) => new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0, emissive: 0x5650a8, emissiveIntensity: 0.5 }));
 SKINS.push(cloudMat);   // index 8 (the lobes pick their own material, this only keeps the table whole)
+// 9 Кладбище спутников: a dead satellite, a foil-wrapped core between two wide solar panels (one of them often broken short)
+const SAT = { landW: 0.64, top: 0.12, hold: 0.3, slide: 3.2, scale: 1.2, lean: 0.5 };   // lean = tipped toward the camera so the panels show their faces   // hold = the share of the half-width that does not tip
+const satMat = {
+  core: new THREE.MeshStandardMaterial({ color: 0xd2a94e, roughness: 0.45, metalness: 0.7, emissive: 0x3a2a08, emissiveIntensity: 0.5 }),
+  steel: new THREE.MeshStandardMaterial({ color: 0x9aa7b8, roughness: 0.5, metalness: 0.6, emissive: 0x1a2230, emissiveIntensity: 0.5 }),
+  panel: new THREE.MeshStandardMaterial({ map: texCanvas(128, 64, (x, w, h) => { x.fillStyle = '#15306e'; x.fillRect(0, 0, w, h); x.strokeStyle = '#7fc8ff'; x.lineWidth = 1.2; for (let i = 0; i <= 8; i++) { x.beginPath(); x.moveTo(i * 16, 0); x.lineTo(i * 16, h); x.stroke(); } for (let i = 0; i <= 4; i++) { x.beginPath(); x.moveTo(0, i * 16); x.lineTo(w, i * 16); x.stroke(); } x.fillStyle = 'rgba(8,12,30,.7)'; for (let i = 0; i < 5; i++) x.fillRect(Math.floor(rnd(0, 8)) * 16 + 1, Math.floor(rnd(0, 4)) * 16 + 1, 14, 14); }), roughness: 0.3, metalness: 0.4, emissive: 0x2a5ab0, emissiveIntensity: 0.45 }),
+};
+SKINS.push([satMat.core]);   // index 9, as for the clouds
+const satGeo = { core: new THREE.BoxGeometry(0.24, 0.2, 0.22), panel: new THREE.BoxGeometry(1, 0.03, 0.26), arm: new THREE.BoxGeometry(0.06, 0.03, 0.04), dish: new THREE.ConeGeometry(0.1, 0.08, 14, 1, true), mast: new THREE.CylinderGeometry(0.008, 0.008, 0.2, 5) };
+function satBody() {
+  const grp = new THREE.Group(), y = 0.085;
+  grp.add(new THREE.Mesh(satGeo.core, satMat.core));
+  for (const k of [-1, 1]) {
+    const len = Math.random() < 0.25 ? rnd(0.2, 0.3) : 0.4;   // a broken panel is shorter
+    const pn = new THREE.Mesh(satGeo.panel, satMat.panel); pn.scale.x = len; pn.position.set(k * (0.17 + len / 2), y, 0); grp.add(pn);
+    const arm = new THREE.Mesh(satGeo.arm, satMat.steel); arm.position.set(k * 0.145, y, 0); grp.add(arm);
+  }
+  const dish = new THREE.Mesh(satGeo.dish, satMat.steel); dish.position.set(0.02, -0.15, 0.06); dish.rotation.x = 0.5; grp.add(dish);
+  const mast = new THREE.Mesh(satGeo.mast, satMat.steel); mast.position.set(-0.07, -0.2, -0.05); grp.add(mast);
+  const blink = new THREE.Sprite(new THREE.SpriteMaterial({ map: softTex, color: 0xff3040, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 })); blink.scale.setScalar(0.16); blink.position.set(0.08, -0.03, 0.13); grp.add(blink); grp.userData.blink = blink;
+  grp.scale.setScalar(SAT.scale); grp.rotation.x = SAT.lean;
+  return grp;
+}
 const cloudLobe = new THREE.SphereGeometry(1, 18, 12);
 const softTex = spriteTex((x, s) => { const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(0.4, 'rgba(255,255,255,.3)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, s, s); });
 function cloudBody() {
@@ -1268,7 +1316,7 @@ const snowCaps = [snowCapGeo(1), snowCapGeo(2.7), snowCapGeo(4.4)];
 const snowMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0, emissive: 0xc4dcff, emissiveIntensity: 0.32, side: THREE.DoubleSide });
 // a thin atmosphere around every planet, in its level's colour (a sprite behind the sphere: only the rim shows)
 const haloTex = spriteTex((x, s) => { const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(0.64, 'rgba(255,255,255,.85)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, s, s); }, 256);
-const haloMat = [[0xbfd0ff, 0.3], [0xffb98a, 0.28], [0x9fe4ff, 0.45], [0xff6a2a, 0.8], [0xa98bff, 0.75], [0xa98bff, 0], [0x7dffa0, 0.6], [0xffe2b0, 0], [0xc7b8ff, 0]].map(([color, opacity]) => new THREE.SpriteMaterial({ map: haloTex, color, opacity, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+const haloMat = [[0xbfd0ff, 0.3], [0xffb98a, 0.28], [0x9fe4ff, 0.45], [0xff6a2a, 0.8], [0xa98bff, 0.75], [0xa98bff, 0], [0x7dffa0, 0.6], [0xffe2b0, 0], [0xc7b8ff, 0], [0x7ff0e0, 0]].map(([color, opacity]) => new THREE.SpriteMaterial({ map: haloTex, color, opacity, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
 function makePlatform(type, x, y) {
   const grp = new THREE.Group(); let body;
   if (type === 'crumble') { body = new THREE.Mesh(jumpGeo.rock, jumpMat.rock); body.scale.setScalar(0.9); body.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3); }
@@ -1282,10 +1330,12 @@ function makePlatform(type, x, y) {
     let skin = game.skinZone ?? 0; if (skin === 5) skin = Math.floor(Math.random() * 5);
     const mat = type === 'rescue' ? jumpMat.lime : SKINS[skin][Math.floor(Math.random() * SKINS[skin].length)];
     const shard = skin === 7 && type !== 'rescue', cloud = skin === 8 && type !== 'rescue';
-    if (cloud) { body = cloudBody(); grp.userData.skin = 8; grp.userData.flat = true; grp.userData.landW = CLOUD.landW; grp.userData.top = CLOUD.top; grp.userData.flick = body.userData.glow; }
-    else body = new THREE.Mesh(shard ? jumpGeo.shard : skin === 1 && type !== 'rescue' ? jumpGeo.asteroid : jumpGeo.planet, mat); if (!cloud) body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
+    const sat = skin === 9 && type !== 'rescue';
+    if (sat) { body = satBody(); grp.userData.skin = 9; grp.userData.flat = true; grp.userData.landW = SAT.landW; grp.userData.top = SAT.top; grp.userData.blink = body.userData.blink; }
+    else if (cloud) { body = cloudBody(); grp.userData.skin = 8; grp.userData.flat = true; grp.userData.landW = CLOUD.landW; grp.userData.top = CLOUD.top; grp.userData.flick = body.userData.glow; }
+    else body = new THREE.Mesh(shard ? jumpGeo.shard : skin === 1 && type !== 'rescue' ? jumpGeo.asteroid : jumpGeo.planet, mat); if (!cloud && !sat) body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
     if (shard) { body.rotation.set(rnd(-0.06, 0.06), rnd(-0.25, 0.25), rnd(-0.06, 0.06)); grp.userData.skin = 7; grp.userData.flat = true; grp.userData.landW = SHARD.landW; grp.userData.top = SHARD.top; }
-    else if (cloud) { /* built above */ }
+    else if (cloud || sat) { /* built above */ }
     else if (type !== 'rescue') { grp.userData.skin = skin; const halo = new THREE.Sprite(haloMat[skin]); halo.scale.setScalar(1.22); halo.position.z = -0.12; grp.add(halo);
       if (skin === 2) { const cap = new THREE.Mesh(snowCaps[Math.floor(Math.random() * snowCaps.length)], snowMat); cap.rotation.set(rnd(-0.1, 0.1), rnd(0, 6.28), rnd(-0.1, 0.1)); grp.add(cap); grp.userData.cap = cap; } }
     if (type === 'move' || type === 'orbit') { const b = new THREE.Mesh(jumpGeo.belt, jumpMat.belt); b.rotation.x = Math.PI / 2 - 0.25; grp.add(b); }
@@ -1301,7 +1351,7 @@ function makePlatform(type, x, y) {
   }
   if (type === 'ring') { const r = new THREE.Mesh(jumpGeo.ring, jumpMat.lime); r.rotation.x = Math.PI / 2 - 0.35; r.rotation.y = 0.25; grp.add(r); }
   grp.position.set(x, y, type === 'ground' ? 0 : -0.55); scene.add(grp);   // planets sit behind Ori's plane so he never cuts into them
-  const p = { grp, body, type, skin: grp.userData.skin ?? -1, glow: grp.userData.glow, cap: grp.userData.cap, alien: grp.userData.alien, occupied: type === 'alien', visitT: Math.random() * 4.8, flat: !!grp.userData.flat, landW: grp.userData.landW ?? JUMP.landW, flick: grp.userData.flick, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
+  const p = { grp, body, type, skin: grp.userData.skin ?? -1, glow: grp.userData.glow, cap: grp.userData.cap, alien: grp.userData.alien, occupied: type === 'alien', visitT: Math.random() * 4.8, flat: !!grp.userData.flat, landW: grp.userData.landW ?? JUMP.landW, flick: grp.userData.flick, blink: grp.userData.blink, rot: type === 'spinner' ? Math.random() * 6.28 : 0, rotV: type === 'spinner' ? (Math.random() < 0.5 ? -1 : 1) * 1.15 : 0, tilt: 0, tiltV: 0, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
   if (type === 'move') { p.vx = (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.5); p.swing = 1.1; }
   if (type === 'orbit' || type === 'belt') p.swing = 99;
   if (p.flat) p.top = grp.userData.top;
@@ -1369,9 +1419,10 @@ function jumpRow() {
   let type = 'planet';
   if (MAIN_INTRO.has(intro)) type = intro;
   else if (sig) type = sig === 'ring' || sig === 'ice' ? sig : 'planet';
-  else if (!calm) { const r = Math.random(), pr = on('ring') ? L.ring : 0, pi = lvl(L.ice, d), pm = on('move') ? lvl(L.move, d) : 0, pv = on('visit') ? lvl(L.visit || 0, d) : 0, pb = on('belt') ? lvl(L.belt || 0, d) : 0; type = r < pr ? 'ring' : r < pr + pi ? 'ice' : r < pr + pi + pm ? 'move' : r < pr + pi + pm + pv ? 'visit' : r < pr + pi + pm + pv + pb ? 'belt' : 'planet'; }
+  else if (!calm) { const r = Math.random(), pr = on('ring') ? L.ring : 0, pi = lvl(L.ice, d), pm = on('move') ? lvl(L.move, d) : 0, pv = on('visit') ? lvl(L.visit || 0, d) : 0, pb = on('belt') ? lvl(L.belt || 0, d) : 0; type = r < pr ? 'ring' : r < pr + pi ? 'ice' : r < pr + pi + pm ? 'move' : r < pr + pi + pm + pv ? 'visit' : r < pr + pi + pm + pv + pb ? 'belt' : r < pr + pi + pm + pv + pb + (on('spinner') ? lvl(L.spinner || 0, d) : 0) ? 'spinner' : 'planet'; }
   if (type === 'visit' && g.lastType === 'visit' && intro !== 'visit') type = 'planet';
-  if (type === 'belt' && g.lastType === 'belt' && intro !== 'belt') type = 'planet';   // a still shard between two drifting rows   // never two in a row: the way up must not close
+  if (type === 'belt' && g.lastType === 'belt' && intro !== 'belt') type = 'planet';
+  if (type === 'spinner' && g.lastType === 'spinner' && intro !== 'spinner') type = 'planet';   // a still shard between two drifting rows   // never two in a row: the way up must not close
   if (type === 'ice' && g.lastType === 'ice' && !L.iceRun) type = 'planet';
   // a black hole is decided before the planet is placed, so the row can make room for it (as a key row does)
   const wantHole = on('hole') && !calm && !intro && !sig && !g.holeRecent && Math.random() < lvl(L.hole, d);
@@ -1396,6 +1447,7 @@ function jumpRow() {
   if (!ok) clearSpot(x, y, sw);
   const p = makePlatform(type, x, y);
   if (type === 'move') { p.swing = sw; p.vx *= intro ? 0.75 : 1 + extra * 0.1; }
+  if (type === 'spinner' && intro) p.rotV *= 0.7;   // the first one turns slower
   if (type === 'belt') {   // the ring turns: two shards half the field apart drift the same way and come round again
     const W = xm + 0.6, v = g.beltDir * (0.85 + extra * 0.08) * (intro ? 0.7 : 1);
     p.vx = v; p.wrap = true;
@@ -1627,6 +1679,8 @@ function landFx(p, x, top) {
     p.spin = (x > p.grp.position.x ? -1 : 1) * rnd(1.2, 2.2);
   } else if (p.skin === 4) {
     for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2, f = spawnFaller(x + Math.cos(a) * 0.12, top + 0.05 + Math.sin(a) * 0.05, 0.25, new THREE.Vector3(Math.cos(a) * 1.5, Math.sin(a) * 0.6, 0), 0.05, 0.5); f.material.color.set(k % 3 ? 0xb39cff : 0xd9f38b); }   // a ring spreading out
+  } else if (p.skin === 9) {
+    puff(12, [0xffffff, 0x9fe8ff, 0xffd08a], () => rnd(-1.7, 1.7), () => rnd(0.3, 1.4), [0.025, 0.05], [0.25, 0.5]);   // sparks off the metal
   } else if (p.skin === 8) {
     puff(12, [0xffffff, 0xd6daf8, 0xcab8ff], () => rnd(-0.9, 0.9), () => rnd(0.1, 0.7), [0.1, 0.18], [0.6, 1.0], 0.12);   // wisps
     p.sq = 1; p.flickT = 0.5;
@@ -1674,6 +1728,11 @@ function jumpLand(p, top) {
   if (p.type === 'ring') for (let k = 0; k < 12; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(p.grp.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 1.5, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); }
   jumpBounce(v);
   if (p.wrap) g.slip = p.vx * 0.9;   // the turning ring carries him along
+  if (p.skin === 9) {   // a satellite holds only in the middle: out on a panel it tips and slides him off that way
+    const k = dxp / p.landW, over = Math.max(0, Math.abs(k) - SAT.hold) / (1 - SAT.hold);
+    g.slip = Math.sign(k) * over * SAT.slide + Math.sin(p.rot) * -1.6 * Math.sign(Math.cos(p.rot)); p.tiltV -= k * 7;
+    if (over > 0.35) gSay('Панель накренилась!', 700);
+  }
   if (p.type === 'ice') g.slip = THREE.MathUtils.clamp(g.vx * 0.35, -1.4, 1.4);   // slippery: he keeps sliding a little
   // bouncing in place: now and then he turns to look the other way
   if (Math.abs(g.targetX - pivot.position.x) < 0.15 && Math.random() < 0.4) g.face = -(g.face || 1);
@@ -1759,6 +1818,7 @@ function jumpStep(dt) {
       if (Math.abs(dxp) >= (ground ? p.w + 0.28 : p.landW)) continue;   // paws must be over the planet, not over the air beside it
       const top = p.grp.position.y + (ground || p.flat ? p.top : surfaceAt(p, dxp));
       if (top < g.takeoffY - JUMP.missDrop || (!ground && top < b.bot + 0.3)) continue;   // lower than the take-off, or off screen: not a landing
+      if (p.rotV && Math.abs(Math.sin(p.rot)) > 0.45) continue;   // a spinning satellite standing on edge is not a surface
       if (y0 >= top - 0.02 && pivot.position.y <= top) {
         if (p.type === 'crumble') {   // a cracked meteorite holds exactly one push-off, then bursts and spills its ore: three stars
           jumpLand(p, top); p.alive = false; p.gone = 0.001; meteorBurst(new THREE.Vector3(p.grp.position.x, top, 0.2), 12, true);
@@ -1847,6 +1907,11 @@ function jumpStep(dt) {
       al.material.rotation = THREE.MathUtils.clamp((p.grp.position.x - pivot.position.x) * 0.12, -0.22, 0.22);   // he leans toward Ori, watching
     }
     if (p.capSq > 0) { p.capSq = Math.max(0, p.capSq - dt / 0.32); const q = Math.sin(Math.PI * p.capSq); p.cap.scale.set(1 + 0.07 * q, 1 - 0.22 * q, 1 + 0.07 * q); }   // the snow cap squashes under the paws
+    if (p.skin === 9) {   // it rocks back after a landing; a spinner keeps turning; the red light blinks
+      p.tiltV += (-42 * p.tilt - 5 * p.tiltV) * dt; p.tilt += p.tiltV * dt; p.rot += p.rotV * dt;
+      p.body.rotation.z = p.rot + p.tilt;
+      if (p.blink) p.blink.material.opacity = Math.sin(g.clock * 3 + p.x0 * 9) > 0.7 ? 0.95 : 0;
+    }
     if (p.sq > 0) { p.sq = Math.max(0, p.sq - dt / 0.4); const q = Math.sin(Math.PI * p.sq); p.body.scale.set(1 + 0.14 * q, 1 - 0.36 * q, 1); p.body.position.y = -0.08 * q; }   // a cloud gives way under him
     if (p.flick) { if (!(p.flickT > 0) && Math.random() < dt * 0.35) p.flickT = rnd(0.15, 0.4); if (p.flickT > 0) p.flickT -= dt; p.flick.material.opacity = p.flickT > 0 ? 0.35 + 0.5 * Math.abs(Math.sin(p.flickT * 40)) : 0; }   // light inside a storm cloud
     if (p.dip > 0) { p.dip = Math.max(0, p.dip - dt / 0.3); p.body.position.y = -0.07 * Math.sin(Math.PI * p.dip); }   // a shard dips under the paws
