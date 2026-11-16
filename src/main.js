@@ -889,10 +889,10 @@ const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 20, goal: 100, m
 // [a, b] = the value at the start and at the end of the level; meteor = seconds between meteors
 const LEVELS = [
   { name: 'Орбита', gap: [1.15, 1.4], dx: [1.0, 1.3], ring: 0.15, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, star: 0.5, bonus: 0.03 },
-  { name: 'Пояс астероидов', gap: [1.3, 1.55], dx: [1.3, 1.6], ring: 0.08, move: 0, ice: 0, orbit: false, crumble: [0.25, 0.4], hot: 0, hole: 0, meteor: [9, 7], gust: 0, star: 0.45, bonus: 0.04 },
-  { name: 'Ледяная туманность', gap: [1.4, 1.65], dx: [1.5, 1.8], ring: 0.08, move: [0.2, 0.35], ice: [0.2, 0.4], orbit: false, crumble: 0.2, hot: 0, hole: 0, meteor: 8, gust: 0, star: 0.45, bonus: 0.045 },
-  { name: 'Солнечный ветер', gap: [1.45, 1.75], dx: [1.6, 1.9], ring: 0.08, move: 0.3, ice: 0.2, orbit: false, crumble: 0.2, hot: [0.2, 0.4], hole: 0, meteor: 8, gust: 8, star: 0.4, bonus: 0.05 },
-  { name: 'Чёрные дыры', gap: [1.5, 1.8], dx: [1.6, 2.0], ring: 0.08, move: 0.3, ice: 0.2, orbit: true, crumble: 0.25, hot: 0.2, hole: [0.15, 0.3], meteor: 7, gust: 10, star: 0.4, bonus: 0.05 },
+  { name: 'Пояс астероидов', gap: [1.3, 1.55], dx: [1.3, 1.6], ring: 0.06, move: 0, ice: 0, orbit: false, crumble: [0.3, 0.5], hot: 0, hole: 0, meteor: [8, 6], gust: 0, star: 0.45, bonus: 0.04 },
+  { name: 'Ледяная туманность', gap: [1.4, 1.65], dx: [1.5, 1.8], ring: 0.06, move: [0.25, 0.4], ice: [0.25, 0.45], orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, star: 0.45, bonus: 0.045 },
+  { name: 'Солнечный ветер', gap: [1.45, 1.75], dx: [1.6, 1.9], ring: 0.06, move: 0, ice: 0, orbit: false, crumble: 0, hot: [0.3, 0.5], hole: 0, meteor: 0, gust: 6.5, star: 0.4, bonus: 0.05 },
+  { name: 'Чёрные дыры', gap: [1.5, 1.8], dx: [1.6, 2.0], ring: 0.06, move: 0, ice: 0, orbit: true, crumble: 0, hot: 0, hole: [0.3, 0.45], meteor: 0, gust: 0, star: 0.4, bonus: 0.05 },
   { name: 'Глубокий космос', gap: [1.55, 1.85], dx: [1.8, 2.0], ring: 0.08, move: 0.35, ice: 0.2, orbit: true, crumble: 0.3, hot: 0.25, hole: 0.15, meteor: 5.5, gust: 7, star: 0.35, bonus: 0.05 },
 ];
 const lvl = (v, d) => Array.isArray(v) ? v[0] + (v[1] - v[0]) * d : v;
@@ -900,17 +900,19 @@ const lvl = (v, d) => Array.isArray(v) ? v[0] + (v[1] - v[0]) * d : v;
 // the level that thing came from. Four hard laps, then a breather with nothing but stars, then round again
 // (the gaps and the speeds keep growing with every lap, as before).
 const LAPS = [
-  { name: 'Метеорный дождь', zone: 1, meteor: 2.8, meteorMin: 2.2, crumble: 0.4, tip: 'Метеоры летят вдвое чаще' },
-  { name: 'Ледяной виток', zone: 2, ice: 0.75, iceRun: true, move: 0.1, hot: 0.15, tip: 'Почти все планеты — лёд' },
-  { name: 'Солнечная буря', zone: 3, hot: 0.4, gust: 3.2, tip: 'Ветер почти не стихает' },
-  { name: 'Поле чёрных дыр', zone: 4, hole: 0.7, holeField: true, orbit: false, hot: 0.15, tip: 'Дыры на каждом шагу — лови гравиманёвры' },
-  { name: 'Звёздный дождь', zone: 0, rest: true, starRain: true, gap: [1.3, 1.5], dx: [1.3, 1.6], ring: 0.15, move: 0.1, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, star: 0, bonus: 0.12, tip: 'Передышка: только звёзды' },
+  { name: 'Метеорный дождь', zone: 1, meteor: 2.8, meteorMin: 2.2, crumble: 0.5, tip: 'Метеоры летят вдвое чаще' },
+  { name: 'Ледяной виток', zone: 2, ice: 0.75, iceRun: true, move: 0.15, tip: 'Почти все планеты — лёд' },
+  { name: 'Солнечная буря', zone: 3, hot: 0.5, gust: 3.2, tip: 'Ветер почти не стихает' },
+  { name: 'Поле чёрных дыр', zone: 4, hole: 0.7, holeField: true, orbit: false, tip: 'Дыры на каждом шагу — лови гравиманёвры' },
+  { name: 'Звёздный дождь', zone: 0, rest: true, starRain: true, gap: [1.3, 1.5], dx: [1.3, 1.6], bonus: 0.12, tip: 'Передышка: только звёзды' },
 ];
 const LAST = LEVELS.length - 1;
 // the definition of level n (0-based): the six levels, then the laps over deep space
-function levelDef(n) { if (n <= LAST) return LEVELS[n]; const lap = LAPS[(n - LAST - 1) % LAPS.length]; return lap.def || (lap.def = { ...LEVELS[LAST], ...lap }); }
+function levelDef(n) { if (n <= LAST) return LEVELS[n]; const lap = LAPS[(n - LAST - 1) % LAPS.length]; return lap.def || (lap.def = { ...LEVELS[lap.zone], gap: LEVELS[LAST].gap, dx: LEVELS[LAST].dx, ...lap }); }
 const levelTitle = (n) => n <= LAST ? `Уровень ${n + 1} · ${LEVELS[n].name}` : `Виток ${n - LAST} · ${levelDef(n).name}`;
 const zoneOf = (n) => n <= LAST ? n : levelDef(n).zone;
+// Every level has its OWN pair of things and its own planets; they do not carry over to the next level.
+// Only the last one, deep space, mixes them all (and the laps after it bend one level's pair further).
 // ONE new thing every half level (10 m), in this order; the level's name is its pair of things:
 //   Орбита: planets, then the ringed planet · Пояс астероидов: meteorites, then flying meteors ·
 //   Ледяная туманность: ice, then drifting planets · Солнечный ветер: red dwarfs, then their wind ·
@@ -1118,6 +1120,52 @@ function jumpBounds() {
   const top = ndcToPlane(0, 1, 0).y, bot = ndcToPlane(0, -1, 0).y, xm = Math.abs(ndcToPlane(playNdc(0.82), 0, 0).x) - 0.35;
   return { top, bot, xm };
 }
+/* ---------- planet skins: every level has its own planets ---------- */
+// 0 Орбита: pastel striped planets · 1 Пояс астероидов: cratered rocks · 2 Ледяная туманность: frozen, snow-capped ·
+// 3 Солнечный ветер: charred with glowing lava cracks, smoking · 4 Чёрные дыры: dark violet with neon bands
+function texCanvas(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; return t; }
+const rnd = (a, b) => a + Math.random() * (b - a);
+function rockSkin(base, dark, light) {
+  return new THREE.MeshStandardMaterial({ map: texCanvas(256, 128, (x, w, h) => {
+    x.fillStyle = base; x.fillRect(0, 0, w, h);
+    for (let i = 0; i < 60; i++) { x.globalAlpha = rnd(0.08, 0.2); x.fillStyle = Math.random() < 0.5 ? dark : light; x.beginPath(); x.ellipse(rnd(0, w), rnd(0, h), rnd(6, 26), rnd(4, 14), rnd(0, 3), 0, 7); x.fill(); }
+    for (let i = 0; i < 12; i++) { const cx = rnd(0, w), cy = rnd(16, h - 16), r = rnd(4, 12);
+      x.globalAlpha = 0.55; x.fillStyle = dark; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill();
+      x.globalAlpha = 0.5; x.strokeStyle = light; x.lineWidth = 1.5; x.beginPath(); x.arc(cx, cy, r, Math.PI * 0.9, Math.PI * 1.9); x.stroke(); }
+  }), roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x2a2020, emissiveIntensity: 0.4 });
+}
+function frozenSkin(a, b) {
+  return new THREE.MeshStandardMaterial({ map: texCanvas(256, 128, (x, w, h) => {
+    const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#fff'); g.addColorStop(0.24, a); g.addColorStop(0.5, b); g.addColorStop(0.76, a); g.addColorStop(1, '#fff'); x.fillStyle = g; x.fillRect(0, 0, w, h);
+    x.fillStyle = 'rgba(30,70,150,.38)'; for (let i = 0; i < 9; i++) { x.beginPath(); x.ellipse(rnd(0, w), rnd(38, h - 38), rnd(10, 28), rnd(3, 7), 0, 0, 7); x.fill(); }
+    x.fillStyle = '#fff'; for (const top of [1, 0]) { x.beginPath(); x.moveTo(0, top ? 0 : h); for (let px = 0; px <= w; px += 8) x.lineTo(px, top ? rnd(18, 32) : h - rnd(18, 32)); x.lineTo(w, top ? 0 : h); x.closePath(); x.fill(); }   // ragged snow caps
+    x.strokeStyle = 'rgba(255,255,255,.8)'; x.lineWidth = 1.2; for (let i = 0; i < 14; i++) { let px = rnd(0, w), py = rnd(30, h - 30); x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 4; k++) { px += rnd(-22, 22); py += rnd(-12, 12); x.lineTo(px, py); } x.stroke(); }   // frost veins
+  }), roughness: 0.5, metalness: 0.05, emissive: 0x2a5a96, emissiveIntensity: 0.2 });
+}
+function lavaSkin(glow) {
+  const lines = []; for (let i = 0; i < 12; i++) { let px = rnd(0, 256), py = rnd(0, 128); const pts = [[px, py]]; for (let k = 0; k < 5; k++) { px += rnd(-34, 34); py += rnd(-20, 20); pts.push([px, py]); } lines.push(pts); }
+  const stroke = (x, col, lw) => { x.strokeStyle = col; x.lineWidth = lw; x.lineCap = x.lineJoin = 'round'; for (const pts of lines) { x.beginPath(); pts.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b))); x.stroke(); } };
+  const map = texCanvas(256, 128, (x, w, h) => { x.fillStyle = '#3c2628'; x.fillRect(0, 0, w, h); for (let i = 0; i < 40; i++) { x.globalAlpha = rnd(0.15, 0.4); x.fillStyle = Math.random() < 0.5 ? '#22151a' : '#5a373a'; x.beginPath(); x.ellipse(rnd(0, w), rnd(0, h), rnd(8, 24), rnd(5, 12), rnd(0, 3), 0, 7); x.fill(); } x.globalAlpha = 1; stroke(x, '#7a2a14', 5); });
+  const em = texCanvas(256, 128, (x, w, h) => { x.fillStyle = '#0c0606'; x.fillRect(0, 0, w, h); stroke(x, glow, 4.5); stroke(x, '#ffe2a8', 1.5); });
+  return new THREE.MeshStandardMaterial({ map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 1.15, roughness: 0.9 });
+}
+function voidSkin(a, b, neon) {
+  const bands = []; for (let i = 0; i < 4; i++) bands.push([rnd(14, 114), rnd(1.5, 4)]);
+  const map = texCanvas(256, 128, (x, w, h) => { x.fillStyle = a; x.fillRect(0, 0, w, h); for (let i = 0; i < 8; i++) { x.globalAlpha = rnd(0.3, 0.6); x.fillStyle = b; x.fillRect(0, rnd(0, h), w, rnd(4, 14)); } });
+  const em = texCanvas(256, 128, (x, w, h) => { x.fillStyle = '#0a0716'; x.fillRect(0, 0, w, h); x.fillStyle = neon; for (const [y, t] of bands) x.fillRect(0, y, w, t); x.fillStyle = '#fff'; for (let i = 0; i < 36; i++) x.fillRect(rnd(0, w), rnd(0, h), 1.5, 1.5); });
+  return new THREE.MeshStandardMaterial({ map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 0.95, roughness: 0.4, metalness: 0.2 });
+}
+const SKINS = [
+  jumpMat.planet,
+  [rockSkin('#7c7078', '#3f363c', '#b3a59c'), rockSkin('#86705f', '#463a33', '#c2a98f'), rockSkin('#6a6f7c', '#353a45', '#a6adba')],
+  [frozenSkin('#a9d8ff', '#4f93d8'), frozenSkin('#b4ecf4', '#48a8c4'), frozenSkin('#b9c6ff', '#6478d6')],
+  [lavaSkin('#ff7a2a'), lavaSkin('#ff5a2a'), lavaSkin('#ffa23a')],
+  [voidSkin('#2a1f55', '#45308a', '#b39cff'), voidSkin('#1f1a48', '#3a2a78', '#d9f38b'), voidSkin('#33205c', '#56308f', '#ff8ad8')],
+];
+jumpGeo.asteroid = new THREE.IcosahedronGeometry(PLANET_R * 1.04, 1);
+// a thin atmosphere around every planet, in its level's colour (a sprite behind the sphere: only the rim shows)
+const haloTex = spriteTex((x, s) => { const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(0.64, 'rgba(255,255,255,.85)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, s, s); }, 256);
+const haloMat = [[0xbfd0ff, 0.3], [0xffb98a, 0.28], [0x9fe4ff, 0.45], [0xff6a2a, 0.8], [0xa98bff, 0.75]].map(([color, opacity]) => new THREE.SpriteMaterial({ map: haloTex, color, opacity, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
 function makePlatform(type, x, y) {
   const grp = new THREE.Group(); let body;
   if (type === 'crumble') { body = new THREE.Mesh(jumpGeo.rock, jumpMat.rock); body.scale.setScalar(0.9); body.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3); }
@@ -1125,10 +1173,13 @@ function makePlatform(type, x, y) {
   else if (type === 'ground') { body = new THREE.Object3D(); }
   else if (type === 'hot') {
     body = new THREE.Mesh(jumpGeo.planet, jumpMat.hot);
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(1.15); grp.add(glow);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(1.15); grp.add(glow); grp.userData.glow = glow;
   } else {
-    const mat = type === 'rescue' ? jumpMat.lime : jumpMat.planet[Math.floor(Math.random() * jumpMat.planet.length)];
-    body = new THREE.Mesh(jumpGeo.planet, mat); body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
+    // the planet of the level this row belongs to (deep space mixes them all)
+    let skin = game.skinZone ?? 0; if (skin > 4) skin = Math.floor(Math.random() * 5);
+    const mat = type === 'rescue' ? jumpMat.lime : SKINS[skin][Math.floor(Math.random() * SKINS[skin].length)];
+    body = new THREE.Mesh(skin === 1 && type !== 'rescue' ? jumpGeo.asteroid : jumpGeo.planet, mat); body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
+    if (type !== 'rescue') { grp.userData.skin = skin; const halo = new THREE.Sprite(haloMat[skin]); halo.scale.setScalar(1.22); halo.position.z = -0.12; grp.add(halo); }
     if (type === 'move' || type === 'orbit') { const b = new THREE.Mesh(jumpGeo.belt, jumpMat.belt); b.rotation.x = Math.PI / 2 - 0.25; grp.add(b); }
   }
   grp.add(body);
@@ -1139,7 +1190,7 @@ function makePlatform(type, x, y) {
   }
   if (type === 'ring') { const r = new THREE.Mesh(jumpGeo.ring, jumpMat.lime); r.rotation.x = Math.PI / 2 - 0.35; r.rotation.y = 0.25; grp.add(r); }
   grp.position.set(x, y, type === 'ground' ? 0 : -0.55); scene.add(grp);   // planets sit behind Ori's plane so he never cuts into them
-  const p = { grp, body, type, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
+  const p = { grp, body, type, skin: grp.userData.skin ?? -1, glow: grp.userData.glow, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
   if (type === 'move') { p.vx = (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.5); p.swing = 1.1; }
   if (type === 'orbit') p.swing = 99;
   game.plats.push(p); return p;
@@ -1184,6 +1235,7 @@ function clearSpot(px, py, sw = 0) {
 function jumpRow() {
   const g = game, { xm } = jumpBounds(), rowAlt = g.nextY - g.baseY + g.scrolled, lv = jumpLevel(rowAlt), L = levelDef(lv.n), extra = L.rest ? 0 : lv.extra;
   const d = THREE.MathUtils.clamp((rowAlt - lv.n * JUMP.levelH) / JUMP.levelH, 0, 1);
+  g.skinZone = zoneOf(lv.n);
   const at = rowAlt / JUMP.levelH, on = (f) => at >= FEATURE_AT[f];
   // every half level starts with a few easier rows that show its new thing in a safe form
   const stage = Math.floor(at * 2);
@@ -1207,8 +1259,8 @@ function jumpRow() {
   else if (sig) type = sig === 'ring' || sig === 'ice' ? sig : 'planet';
   else if (!calm) { const r = Math.random(), pr = on('ring') ? L.ring : 0, pi = lvl(L.ice, d), pm = on('move') ? lvl(L.move, d) : 0; type = r < pr ? 'ring' : r < pr + pi ? 'ice' : r < pr + pi + pm ? 'move' : 'planet'; }
   if (type === 'ice' && g.lastType === 'ice' && !L.iceRun) type = 'planet';
-  // a lap of black holes: the hole is decided before the planet is placed, so the row can make room for it (as a key row does)
-  const wantHole = !!L.holeField && !calm && !intro && !sig && !g.holeRecent && Math.random() < L.hole;
+  // a black hole is decided before the planet is placed, so the row can make room for it (as a key row does)
+  const wantHole = on('hole') && !calm && !intro && !sig && !g.holeRecent && Math.random() < lvl(L.hole, d);
   if (wantHole && type === 'move') type = 'planet';
   const roomy = sig || wantHole;
   g.rowN++;
@@ -1244,7 +1296,7 @@ function jumpRow() {
     else if (!calm && !wantHole) { const t = Math.random(), pc = lvl(L.crumble, d), ph = lvl(L.hot, d); /* a hole needs the free side for itself */ rtype = t < pc ? 'crumble' : t < pc + ph ? 'hot' : null; }
     if (rtype) for (let k = 0; k < (sig ? 24 : 8) && !risky; k++) { const rx = side(1.2 + Math.random() * 0.8), ry = y + (Math.random() - 0.5) * 0.6; if (spotFree(rx, ry)) { risky = makePlatform(rtype, rx, ry); risky.extra = true; } }
     if (!risky && (intro === 'crumble' || intro === 'hot')) g.intro.unshift(intro);
-    if (intro === 'hole' || sig === 'hole' || wantHole || (!L.holeField && !calm && Math.random() < lvl(L.hole, d) && !g.holeRecent)) {
+    if (intro === 'hole' || sig === 'hole' || wantHole) {
       for (let k = 0; k < (roomy ? 24 : 8); k++) {
         const hx = side(1.6 + Math.random() * 0.6), hy = y + gap * (roomy ? 0.3 + Math.random() * 0.3 : 0.45);
         if (g.plats.every((q) => !spacer(q) || sepTo(q, hx, hy) >= JUMP.holeSep)) { const h = newHole = jumpHole(hx, hy); if (intro === 'hole') h.intro = true; g.holeRecent = L.holeField ? 1 : 2; break; }
@@ -1319,7 +1371,7 @@ function jumpStart() {
     knock: 0, knockV: 0, scald: 0, vx: 0, rowN: 0, orbitIn: 4, tipped: {}, genStage: 0, keyAt: 3, keyOut: false, gustSeen: false, gustOn: false, windAmp: 2.3, introLeft: 0, intro: [], lastType: 'planet', meteorSeen: false, falling: false, fallT: 0 });
   g.takeoffY = g.baseY;
   g.nextY = g.baseY; g.lastX = 0; g.meteorIn = 99; g.dayY = g.baseY + JUMP.goal; g.dayX = 0;
-  makePlatform('ground', 0, g.baseY);
+  g.skinZone = 0; makePlatform('ground', 0, g.baseY);
   const b = jumpBounds(); while (g.nextY < b.top + 2) jumpRow();
   // the star of the day: always visible (as a light at the top) until Ori reaches it
   const day = makeHeroStar(); scene.add(day); g.day = day;
@@ -1579,7 +1631,18 @@ function jumpStep(dt) {
       const lim = p.swing ?? 1.1;
       if (Math.abs(p.grp.position.x) > b.xm || Math.abs(p.grp.position.x - p.x0) > lim) { p.grp.position.x = THREE.MathUtils.clamp(THREE.MathUtils.clamp(p.grp.position.x, p.x0 - lim, p.x0 + lim), -b.xm, b.xm); p.vx = -p.vx; }
     }
-    if (p.type === 'hot') { p.body.rotation.y += dt * 0.6; if (p.steam > 0) { p.steam -= dt; for (let k = 0, n = emit(6, dt); k < n; k++) { const f = spawnFaller(p.grp.position.x + (Math.random() - 0.5) * 0.6, p.grp.position.y + 0.3, 0.3, new THREE.Vector3((Math.random() - 0.5) * 0.3, 1.2 + Math.random(), 0), 0.07, 0.6); f.material.color.set(0xffd7c2); } } }
+    if (p.alive && p.skin > 0) {
+      const px = p.grp.position.x, py = p.grp.position.y;
+      if (p.skin === 3) for (let k = 0, n = emit(0.07, dt); k < n; k++) { const f = spawnFaller(px + rnd(-0.22, 0.22), py + rnd(0.2, 0.36), -0.3, new THREE.Vector3(rnd(-0.1, 0.1), rnd(0.3, 0.55), 0), rnd(0.07, 0.13), rnd(1.2, 2)); f.material.color.set(0x8f8088); f.userData.fin = 0.4; }   // smoke
+      else if (p.skin === 2) for (let k = 0, n = emit(0.05, dt); k < n; k++) { const f = spawnFaller(px + rnd(-0.42, 0.42), py + rnd(-0.1, 0.4), -0.3, new THREE.Vector3(rnd(-0.08, 0.08), -rnd(0.1, 0.25), 0), rnd(0.03, 0.045), rnd(1, 1.8)); f.material.color.set(0xeaf8ff); f.userData.fin = 0.3; }   // snow
+      else if (p.skin === 1) for (let k = 0, n = emit(0.025, dt); k < n; k++) { const f = spawnFaller(px + rnd(-0.45, 0.45), py + rnd(-0.3, 0.3), -0.3, new THREE.Vector3(rnd(-0.2, 0.2), rnd(-0.12, 0.05), 0), rnd(0.03, 0.05), rnd(1.2, 2)); f.material.color.set(0xb9a79a); f.userData.fin = 0.3; }   // dust
+      else if (p.skin === 4) for (let k = 0, n = emit(0.045, dt); k < n; k++) { const a = rnd(0, 6.28), f = spawnFaller(px + Math.cos(a) * 0.52, py + Math.sin(a) * 0.52, -0.3, new THREE.Vector3(-Math.sin(a) * 0.3, Math.cos(a) * 0.3, 0), rnd(0.03, 0.05), rnd(0.8, 1.4)); f.material.color.set(Math.random() < 0.7 ? 0xb39cff : 0xd9f38b); f.userData.fin = 0.3; }   // motes circling
+    }
+    if (p.type === 'hot') {
+      // the dwarf blazes: a pulsing corona and tongues of flame, so it is never mistaken for a planet to land on
+      if (p.glow) p.glow.scale.setScalar(1.2 + 0.1 * Math.sin(g.clock * 5 + p.x0 * 7));
+      for (let k = 0, n = emit(0.14, dt); k < n; k++) { const a = rnd(0.3, 2.84), f = spawnFaller(p.grp.position.x + Math.cos(a) * 0.36, p.grp.position.y + Math.sin(a) * 0.36, -0.3, new THREE.Vector3(Math.cos(a) * 0.25, 0.35 + Math.sin(a) * 0.4, 0), rnd(0.05, 0.09), rnd(0.5, 0.9)); f.material.color.set(Math.random() < 0.5 ? 0xff4a1c : 0xffb347); }
+      p.body.rotation.y += dt * 0.6; if (p.steam > 0) { p.steam -= dt; for (let k = 0, n = emit(6, dt); k < n; k++) { const f = spawnFaller(p.grp.position.x + (Math.random() - 0.5) * 0.6, p.grp.position.y + 0.3, 0.3, new THREE.Vector3((Math.random() - 0.5) * 0.3, 1.2 + Math.random(), 0), 0.07, 0.6); f.material.color.set(0xffd7c2); } } }
     if (p.gone > 0) {
       p.gone += dt;
       if (p.type === 'crumble') { p.grp.position.y -= 3 * p.gone * dt * 10; p.grp.rotation.z += 3 * dt; p.body.scale.multiplyScalar(1 - dt * 1.2); }
