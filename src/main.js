@@ -896,6 +896,8 @@ const LEVELS = [
   { name: 'Глубокий космос', gap: [1.55, 1.85], dx: [1.8, 2.0], ring: 0.08, move: 0.35, ice: 0.2, orbit: true, crumble: 0.3, hot: 0.25, hole: 0.15, meteor: 5.5, gust: 7, star: 0.35, bonus: 0.05 },
   // aliens: a planet with a green fellow on it is taken (he shoves Ori off); later they fly in and out of the planets on the way
   { name: 'Планета пришельцев', gap: [1.55, 1.85], dx: [1.8, 2.0], ring: 0.06, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, alien: [0.35, 0.55], visit: [0.3, 0.45], star: 0.4, bonus: 0.05 },
+  // the rings of a gas giant: no planets, only narrow flat shards of its ring; later whole rows of them drift one way (the ring turns)
+  { name: 'Кольца гиганта', gap: [1.5, 1.8], dx: [1.5, 1.8], ring: 0, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, belt: [0.4, 0.6], star: 0.45, bonus: 0.05, tip: 'Обломки кольца узкие — целься точно' },
 ];
 const lvl = (v, d) => Array.isArray(v) ? v[0] + (v[1] - v[0]) * d : v;
 // After the six levels (120 m) the climb goes on in LAPS of 20 m: deep space bent one way each time, in the sky of
@@ -919,13 +921,13 @@ const zoneOf = (n) => n <= LAST ? n : levelDef(n).zone;
 //   Орбита: planets, then the ringed planet · Пояс астероидов: meteorites, then flying meteors ·
 //   Ледяная туманность: ice, then drifting planets · Солнечный ветер: red dwarfs, then their wind ·
 //   Чёрные дыры: holes, then planets orbiting across the screen · Глубокий космос: everything together
-const STAGE_INTRO = [null, 'ring', 'crumble', 'meteor', 'ice', 'move', 'hot', 'gust', 'hole', 'orbit', null, null, 'alien', 'visit'];
+const STAGE_INTRO = [null, 'ring', 'crumble', 'meteor', 'ice', 'move', 'hot', 'gust', 'hole', 'orbit', null, null, 'alien', 'visit', null, 'belt'];
 // where each thing first appears, in levels (1.5 = the middle of level 2). Nothing is generated before that
 const FEATURE_AT = Object.fromEntries(STAGE_INTRO.map((f, i) => [f, i / 2]).filter(([f]) => f));
-const MAIN_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'visit']);                // shown as the row's own planet
-const ROW_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'crumble', 'hot', 'hole', 'alien', 'visit']);   // meteors and wind are shown by jumpStep
+const MAIN_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'visit', 'belt']);                // shown as the row's own planet
+const ROW_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'crumble', 'hot', 'hole', 'alien', 'visit', 'belt']);   // meteors and wind are shown by jumpStep
 // a key star (a point of the constellation) hangs behind the thing its level is about
-const KEY_SIG = ['ring', 'crumble', 'ice', 'hot', 'hole', null, 'alien'];   // by zone
+const KEY_SIG = ['ring', 'crumble', 'ice', 'hot', 'hole', null, 'alien', null];   // by zone
 // the first time a new thing comes into view, one line explains it
 const INTRO_TIP = {
   ring: 'Планета с кольцом подбрасывает намного выше',
@@ -937,6 +939,7 @@ const INTRO_TIP = {
   hole: 'Чёрная дыра затягивает. Пролети по краю — будет разгон',
   alien: 'Планета занята — пришелец отпихнёт. Ищи свободную',
   visit: 'Пришелец прилетает и улетает — прыгай, пока планета свободна',
+  belt: 'Кольцо вращается: обломки плывут в одну сторону и несут Ори с собой',
 };
 function tipOnce(key, y, b) {
   const g = game;
@@ -960,6 +963,8 @@ const ZONES = [
     amb: { n: 0.12, col: [0xd9f38b, 0xffffff], v: [0, -0.08], s: [0.02, 0.04], life: 4 } },
   { accent: '#8CFF9A', star: '#d6ffe0', bg: zoneBg([[70, 36, 20, 28, 'rgba(80,255,150,.2)'], [60, 30, 84, 66, 'rgba(60,200,220,.16)']], '#1f5a45', '#10302c', '#0a1f22', '#040d10'),
     amb: { n: 0.22, col: [0x8cff9a, 0xd9f38b], v: [0, 0.3], s: [0.025, 0.045], life: 4, sway: 0.3 } },
+  { accent: '#FFD9A0', star: '#fff0d8', bg: zoneBg([[90, 34, 50, 102, 'rgba(255,190,110,.2)'], [60, 30, 86, 20, 'rgba(150,170,255,.12)']], '#3a3040', '#1b1a2c', '#11111f', '#07070f'),
+    amb: { n: 0.4, col: [0xffffff, 0xffe2b0], v: [0.55, 0], s: [0.02, 0.045], life: 4, sway: 0.1 } },   // ice dust of the ring, drifting along it
 ];
 const zoneEls = [...document.querySelectorAll('#zone i')], zoneStar = new THREE.Color('#dfe7ff');
 let zoneIdx = -1, zoneTop = 0;
@@ -972,9 +977,30 @@ function setZone(i) {   // -1 = no zone (outside the game)
   }
   document.body.style.setProperty('--zone', z ? z.accent : '#D9F38B');
   zoneStar.set(z ? z.star : '#dfe7ff');
-  if (!z) { starsFar.material.uniforms.uColor.value.set('#dfe7ff'); gGate.classList.remove('show'); hud.gateShow = false; gWind.className = ''; hud.wind = ''; }
+  if (!z) { starsFar.material.uniforms.uColor.value.set('#dfe7ff'); gGate.classList.remove('show'); hud.gateShow = false; gWind.className = ''; hud.wind = ''; if (giant) { giant.visible = false; giant.material.opacity = 0; } }
+}
+// the gas giant of zone 7: a huge banded planet with rings far behind everything (drawn once, shown only there)
+let giant = null;
+function makeGiant() {
+  const r2 = (a, b) => a + Math.random() * (b - a);
+  const tex = spriteTex((x, s) => { const c = s / 2, R = s * 0.33;
+    const ring = (front) => { x.save(); x.translate(c, c); x.rotate(-0.35); x.scale(1, 0.26); for (const [r, w, a] of [[1.32, 9, 0.5], [1.52, 16, 0.36], [1.76, 6, 0.3]]) { x.strokeStyle = `rgba(255,226,180,${a})`; x.lineWidth = w * s / 512; x.beginPath(); x.arc(0, 0, R * r, front ? 0 : Math.PI, front ? Math.PI : Math.PI * 2); x.stroke(); } x.restore(); };
+    ring(false);
+    x.save(); x.beginPath(); x.arc(c, c, R, 0, 7); x.clip(); x.translate(c, c); x.rotate(-0.35);
+    const bands = ['#e8c08a', '#c9925c', '#f0d6a8', '#b87a52', '#e0b47c', '#9a6248', '#eccb98', '#c48a5a'];
+    for (let y = -R, i = 0; y < R; i++) { const h = R * r2(0.1, 0.26); x.fillStyle = bands[i % bands.length]; x.fillRect(-R, y, 2 * R, h + 1); y += h; }
+    x.rotate(0.35); const g = x.createRadialGradient(-R * 0.45, -R * 0.45, R * 0.15, 0, 0, R * 1.1); g.addColorStop(0, 'rgba(255,255,255,.14)'); g.addColorStop(0.55, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(8,8,24,.8)'); x.fillStyle = g; x.fillRect(-R, -R, 2 * R, 2 * R);
+    x.restore(); ring(true);
+  }, 512);
+  giant = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+  giant.scale.setScalar(5.4); giant.renderOrder = -2; giant.visible = false; scene.add(giant);
 }
 function stepZone(dt, b) {
+  if (zoneIdx === 7 && !giant) makeGiant();
+  if (giant) {
+    const want = zoneIdx === 7 ? 0.62 : 0; giant.material.opacity += (want - giant.material.opacity) * Math.min(1, 1.2 * dt); giant.visible = giant.material.opacity > 0.01;
+    giant.position.set(-1.3, b.bot + (b.top - b.bot) * 0.22 - (game.alt - 7 * JUMP.levelH) * 0.04, -7);   // it sinks slowly as he climbs
+  }
   const g = game, z = ZONES[zoneIdx];
   starsFar.material.uniforms.uColor.value.lerp(zoneStar, Math.min(1, dt));
   const a = z && z.amb; if (!a) return;
@@ -1190,9 +1216,18 @@ const SKINS = [
   [frozenSkin('#a9d8ff', '#4f93d8'), frozenSkin('#b4ecf4', '#48a8c4'), frozenSkin('#b9c6ff', '#6478d6')],
   [lavaSkin('#ff7a2a'), lavaSkin('#ff5a2a'), lavaSkin('#ffa23a')],
   [voidSkin('#2a1f55', '#45308a', '#b39cff'), voidSkin('#1f1a48', '#3a2a78', '#d9f38b'), voidSkin('#33205c', '#56308f', '#ff8ad8')],
-  null,   // 5 = deep space: a mix of the five above
+  null,   // 5 = deep space: a mix of the first five
   [mossSkin('#2f8a55', '#1d5c3a', '#8cff9a'), mossSkin('#3a9a7a', '#1f5f55', '#d9f38b'), mossSkin('#4a9a45', '#2a6230', '#aef0ff')],
+  // 7 Кольца гиганта: shards of ice and rock (flat, see jumpGeo.shard)
+  [new THREE.MeshStandardMaterial({ color: 0xb4c6de, roughness: 0.35, metalness: 0.2, flatShading: true, emissive: 0x38527c, emissiveIntensity: 0.35 }),
+    new THREE.MeshStandardMaterial({ color: 0xd9c6a8, roughness: 0.5, metalness: 0.1, flatShading: true, emissive: 0x5a4630, emissiveIntensity: 0.35 }),
+    new THREE.MeshStandardMaterial({ color: 0xe6f0ff, roughness: 0.2, metalness: 0.25, flatShading: true, emissive: 0x4a6aa0, emissiveIntensity: 0.4 })],
 ];
+// a shard: a lens of rock, ragged, half as tall as it is deep. SHARD = its landing half-width and the height of its top
+const SHARD = { landW: 0.36, top: 0.12 };
+jumpGeo.shard = (() => { const g = new THREE.IcosahedronGeometry(1, 2), pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) { const k = 1 + 0.16 * Math.sin(pos.getX(i) * 7.3 + pos.getZ(i) * 4.1) + 0.1 * Math.sin(pos.getZ(i) * 9.7); pos.setXYZ(i, pos.getX(i) * 0.52 * k, pos.getY(i) * SHARD.top * (pos.getY(i) > 0 ? 1 : 1.5), pos.getZ(i) * 0.32 * k); }
+  g.computeVertexNormals(); return g; })();
 jumpGeo.asteroid = new THREE.IcosahedronGeometry(PLANET_R * 1.04, 1);
 // a frozen planet wears a cap of snow: a thick mound over its top with a ragged, drooping edge
 function snowCapGeo(seed) {
@@ -1209,7 +1244,7 @@ const snowCaps = [snowCapGeo(1), snowCapGeo(2.7), snowCapGeo(4.4)];
 const snowMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0, emissive: 0xc4dcff, emissiveIntensity: 0.32, side: THREE.DoubleSide });
 // a thin atmosphere around every planet, in its level's colour (a sprite behind the sphere: only the rim shows)
 const haloTex = spriteTex((x, s) => { const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(0.64, 'rgba(255,255,255,.85)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, s, s); }, 256);
-const haloMat = [[0xbfd0ff, 0.3], [0xffb98a, 0.28], [0x9fe4ff, 0.45], [0xff6a2a, 0.8], [0xa98bff, 0.75], [0xa98bff, 0], [0x7dffa0, 0.6]].map(([color, opacity]) => new THREE.SpriteMaterial({ map: haloTex, color, opacity, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+const haloMat = [[0xbfd0ff, 0.3], [0xffb98a, 0.28], [0x9fe4ff, 0.45], [0xff6a2a, 0.8], [0xa98bff, 0.75], [0xa98bff, 0], [0x7dffa0, 0.6], [0xffe2b0, 0]].map(([color, opacity]) => new THREE.SpriteMaterial({ map: haloTex, color, opacity, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
 function makePlatform(type, x, y) {
   const grp = new THREE.Group(); let body;
   if (type === 'crumble') { body = new THREE.Mesh(jumpGeo.rock, jumpMat.rock); body.scale.setScalar(0.9); body.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3); }
@@ -1222,8 +1257,10 @@ function makePlatform(type, x, y) {
     // the planet of the level this row belongs to (deep space mixes them all)
     let skin = game.skinZone ?? 0; if (skin === 5) skin = Math.floor(Math.random() * 5);
     const mat = type === 'rescue' ? jumpMat.lime : SKINS[skin][Math.floor(Math.random() * SKINS[skin].length)];
-    body = new THREE.Mesh(skin === 1 && type !== 'rescue' ? jumpGeo.asteroid : jumpGeo.planet, mat); body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
-    if (type !== 'rescue') { grp.userData.skin = skin; const halo = new THREE.Sprite(haloMat[skin]); halo.scale.setScalar(1.22); halo.position.z = -0.12; grp.add(halo);
+    const shard = skin === 7 && type !== 'rescue';
+    body = new THREE.Mesh(shard ? jumpGeo.shard : skin === 1 && type !== 'rescue' ? jumpGeo.asteroid : jumpGeo.planet, mat); body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
+    if (shard) { body.rotation.set(rnd(-0.06, 0.06), rnd(-0.25, 0.25), rnd(-0.06, 0.06)); grp.userData.skin = 7; grp.userData.flat = true; }
+    else if (type !== 'rescue') { grp.userData.skin = skin; const halo = new THREE.Sprite(haloMat[skin]); halo.scale.setScalar(1.22); halo.position.z = -0.12; grp.add(halo);
       if (skin === 2) { const cap = new THREE.Mesh(snowCaps[Math.floor(Math.random() * snowCaps.length)], snowMat); cap.rotation.set(rnd(-0.1, 0.1), rnd(0, 6.28), rnd(-0.1, 0.1)); grp.add(cap); grp.userData.cap = cap; } }
     if (type === 'move' || type === 'orbit') { const b = new THREE.Mesh(jumpGeo.belt, jumpMat.belt); b.rotation.x = Math.PI / 2 - 0.25; grp.add(b); }
   }
@@ -1238,9 +1275,10 @@ function makePlatform(type, x, y) {
   }
   if (type === 'ring') { const r = new THREE.Mesh(jumpGeo.ring, jumpMat.lime); r.rotation.x = Math.PI / 2 - 0.35; r.rotation.y = 0.25; grp.add(r); }
   grp.position.set(x, y, type === 'ground' ? 0 : -0.55); scene.add(grp);   // planets sit behind Ori's plane so he never cuts into them
-  const p = { grp, body, type, skin: grp.userData.skin ?? -1, glow: grp.userData.glow, cap: grp.userData.cap, alien: grp.userData.alien, occupied: type === 'alien', visitT: Math.random() * 4.8, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
+  const p = { grp, body, type, skin: grp.userData.skin ?? -1, glow: grp.userData.glow, cap: grp.userData.cap, alien: grp.userData.alien, occupied: type === 'alien', visitT: Math.random() * 4.8, flat: !!grp.userData.flat, landW: grp.userData.flat ? SHARD.landW : JUMP.landW, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
   if (type === 'move') { p.vx = (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.5); p.swing = 1.1; }
-  if (type === 'orbit') p.swing = 99;
+  if (type === 'orbit' || type === 'belt') p.swing = 99;
+  if (p.flat) p.top = SHARD.top;
   game.plats.push(p); return p;
 }
 function removePlatform(i) { const p = game.plats[i]; scene.remove(p.grp); game.plats.splice(i, 1); }
@@ -1305,8 +1343,9 @@ function jumpRow() {
   let type = 'planet';
   if (MAIN_INTRO.has(intro)) type = intro;
   else if (sig) type = sig === 'ring' || sig === 'ice' ? sig : 'planet';
-  else if (!calm) { const r = Math.random(), pr = on('ring') ? L.ring : 0, pi = lvl(L.ice, d), pm = on('move') ? lvl(L.move, d) : 0, pv = on('visit') ? lvl(L.visit || 0, d) : 0; type = r < pr ? 'ring' : r < pr + pi ? 'ice' : r < pr + pi + pm ? 'move' : r < pr + pi + pm + pv ? 'visit' : 'planet'; }
-  if (type === 'visit' && g.lastType === 'visit' && intro !== 'visit') type = 'planet';   // never two in a row: the way up must not close
+  else if (!calm) { const r = Math.random(), pr = on('ring') ? L.ring : 0, pi = lvl(L.ice, d), pm = on('move') ? lvl(L.move, d) : 0, pv = on('visit') ? lvl(L.visit || 0, d) : 0, pb = on('belt') ? lvl(L.belt || 0, d) : 0; type = r < pr ? 'ring' : r < pr + pi ? 'ice' : r < pr + pi + pm ? 'move' : r < pr + pi + pm + pv ? 'visit' : r < pr + pi + pm + pv + pb ? 'belt' : 'planet'; }
+  if (type === 'visit' && g.lastType === 'visit' && intro !== 'visit') type = 'planet';
+  if (type === 'belt' && g.lastType === 'belt' && intro !== 'belt') type = 'planet';   // a still shard between two drifting rows   // never two in a row: the way up must not close
   if (type === 'ice' && g.lastType === 'ice' && !L.iceRun) type = 'planet';
   // a black hole is decided before the planet is placed, so the row can make room for it (as a key row does)
   const wantHole = on('hole') && !calm && !intro && !sig && !g.holeRecent && Math.random() < lvl(L.hole, d);
@@ -1316,21 +1355,26 @@ function jumpRow() {
   const orbits = L.orbit && on('orbit');
   if (orbits && !calm && !keyRow && g.lastType !== 'orbit' && --g.orbitIn <= 0) { type = 'orbit'; g.orbitIn = JUMP.orbitEvery[0] + Math.floor(Math.random() * (JUMP.orbitEvery[1] - JUMP.orbitEvery[0] + 1)); }
   const orbitNext = orbits && g.orbitIn <= 1 && g.introLeft === 0;   // the row under an orbit stays clear
-  let y = g.nextY + gap, x = 0, sw = type === 'orbit' ? 99 : type === 'move' ? (intro ? 0.7 : 1.1) : 0, ok = false;
+  let y = g.nextY + gap, x = 0, sw = type === 'orbit' || type === 'belt' ? 99 : type === 'move' ? (intro ? 0.7 : 1.1) : 0, ok = false;
   for (let t = 0; t < 40 && !ok; t++) {
     if (t && t % 10 === 0) {   // no room: a shorter swing, then a still planet, then a slightly bigger gap
       if (type === 'move' && sw > 0.5) sw = 0.5;
-      else if (type === 'move' || type === 'orbit') { type = 'planet'; sw = 0; }
+      else if (type === 'move' || type === 'orbit' || type === 'belt') { type = 'planet'; sw = 0; }
       else y = Math.min(g.nextY + JUMP.maxGap, y + 0.12);
     }
     // (a key row of a black hole or a red dwarf: the planet goes to its own side's edge, so the other body fits beside it on a phone)
-    x = type === 'orbit' ? (Math.random() * 2 - 1) * xm : sig === 'hole' || sig === 'hot' || sig === 'alien' || wantHole ? (g.lastX >= 0 ? 1 : -1) * xm * (0.8 + 0.2 * Math.random())
+    x = type === 'orbit' || type === 'belt' ? (Math.random() * 2 - 1) * xm : sig === 'hole' || sig === 'hot' || sig === 'alien' || wantHole ? (g.lastX >= 0 ? 1 : -1) * xm * (0.8 + 0.2 * Math.random())
       : THREE.MathUtils.clamp(g.lastX + (Math.random() * 2 - 1) * reach, -xm, xm);
     ok = spotFree(x, y, sw);
   }
   if (!ok) clearSpot(x, y, sw);
   const p = makePlatform(type, x, y);
   if (type === 'move') { p.swing = sw; p.vx *= intro ? 0.75 : 1 + extra * 0.1; }
+  if (type === 'belt') {   // the ring turns: two shards half the field apart drift the same way and come round again
+    const W = xm + 0.6, v = g.beltDir * (0.85 + extra * 0.08) * (intro ? 0.7 : 1);
+    p.vx = v; p.wrap = true;
+    const q = makePlatform('belt', x > 0 ? x - W : x + W, y); q.vx = v; q.wrap = true;
+  }
   if (type === 'orbit') { p.vx = (Math.random() < 0.5 ? -1 : 1) * (1.1 + 0.2 * Math.min(lv.idx, 4) + extra * 0.1) * (intro ? 0.7 : 1); }
   if (MAIN_INTRO.has(intro) && type !== intro) g.intro.unshift(intro);
   // a spot dd to one side of the planet; if it is off the field, the other side; if that is off too (a phone), the far edge
@@ -1338,7 +1382,7 @@ function jumpRow() {
   const side = (dd) => { const dir = Math.random() < 0.5 ? -1 : 1; let tx = x + dir * dd; if (Math.abs(tx) > xm) { const o = x - dir * dd; tx = Math.abs(o) <= xm ? o : (x > 0 ? -xm : xm); } return tx; };
   // extras: never next to a moving or orbiting planet, never under an orbit
   let risky = null, newHole = null;
-  if (type !== 'move' && type !== 'orbit' && !orbitNext) {
+  if (type !== 'move' && type !== 'orbit' && type !== 'belt' && !orbitNext) {
     let rtype = null;
     if (intro === 'crumble' || intro === 'hot' || intro === 'alien') rtype = intro;
     else if (sig === 'crumble' || sig === 'hot' || sig === 'alien') rtype = sig;
@@ -1417,7 +1461,7 @@ function jumpStart() {
   Object.assign(g, { plats: [], bonuses: [], holes: [], vy: 0, slip: 0, alt: 0, best: 0, scrolled: 0, level: 0, bank: 0, saves: 0, series: 0, bestSeries: 0,
     bubbleAt: JUMP.bubble[0] + Math.random() * 12, hop: 1, nearT: 0, tipQ: [], recAt: getRecord(), recTip: false, recPassed: false, litTip: false, litDone: false, result: '',
     dashReady: false, face: Math.random() < 0.5 ? -1 : 1, spinT: 0, rocket: 0, bubble: false, magnet: 0, wind: 0, windT: 0, gustIn: 99, dayStar: false, dayShine: false, holeRecent: 0, perfects: 0,
-    knock: 0, knockV: 0, scald: 0, vx: 0, rowN: 0, orbitIn: 4, tipped: {}, genStage: 0, keyAt: 3, keyOut: false, gustSeen: false, gustOn: false, windAmp: 2.3, introLeft: 0, intro: [], lastType: 'planet', meteorSeen: false, falling: false, fallT: 0 });
+    knock: 0, knockV: 0, scald: 0, vx: 0, rowN: 0, beltDir: Math.random() < 0.5 ? -1 : 1, orbitIn: 4, tipped: {}, genStage: 0, keyAt: 3, keyOut: false, gustSeen: false, gustOn: false, windAmp: 2.3, introLeft: 0, intro: [], lastType: 'planet', meteorSeen: false, falling: false, fallT: 0 });
   g.takeoffY = g.baseY;
   g.nextY = g.baseY; g.lastX = 0; g.meteorIn = 99; g.dayY = g.baseY + JUMP.goal; g.dayX = 0;
   g.skinZone = 0; makePlatform('ground', 0, g.baseY);
@@ -1519,6 +1563,9 @@ function landFx(p, x, top) {
     p.spin = (x > p.grp.position.x ? -1 : 1) * rnd(1.2, 2.2);
   } else if (p.skin === 4) {
     for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2, f = spawnFaller(x + Math.cos(a) * 0.12, top + 0.05 + Math.sin(a) * 0.05, 0.25, new THREE.Vector3(Math.cos(a) * 1.5, Math.sin(a) * 0.6, 0), 0.05, 0.5); f.material.color.set(k % 3 ? 0xb39cff : 0xd9f38b); }   // a ring spreading out
+  } else if (p.skin === 7) {
+    puff(12, [0xffffff, 0xffe2b0, 0xcfe0ff], () => rnd(-1.6, 1.6), () => rnd(0.1, 0.8), [0.03, 0.06], [0.35, 0.6]);   // chips of ice
+    p.dip = 1;
   } else if (p.skin === 6) {
     puff(12, [0x8cff9a, 0xd9f38b, 0xffffff], () => rnd(-1.2, 1.2), () => rnd(0.3, 1.3), [0.04, 0.07], [0.35, 0.6]);   // spores
   } else if (p.skin === 0) {
@@ -1546,7 +1593,7 @@ function jumpLand(p, top) {
     if (g.series % 5 === 0) g.dashNow = true;
   } else if (p.type !== 'ground') {
     g.series = 0;
-    if (Math.abs(dxp) > JUMP.landW * JUMP.edge && p.type !== 'rescue') nearMiss(toScreen(new THREE.Vector3(pivot.position.x, top + 1.5, 0)));
+    if (Math.abs(dxp) > p.landW * JUMP.edge && p.type !== 'rescue') nearMiss(toScreen(new THREE.Vector3(pivot.position.x, top + 1.5, 0)));
   }
   setSeries();
   let v = JUMP.v0;
@@ -1558,6 +1605,7 @@ function jumpLand(p, top) {
   }
   if (p.type === 'ring') for (let k = 0; k < 12; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(p.grp.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 1.5, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); }
   jumpBounce(v);
+  if (p.wrap) g.slip = p.vx * 0.9;   // the turning ring carries him along
   if (p.type === 'ice') g.slip = THREE.MathUtils.clamp(g.vx * 0.35, -1.4, 1.4);   // slippery: he keeps sliding a little
   // bouncing in place: now and then he turns to look the other way
   if (Math.abs(g.targetX - pivot.position.x) < 0.15 && Math.random() < 0.4) g.face = -(g.face || 1);
@@ -1640,8 +1688,8 @@ function jumpStep(dt) {
     for (const p of g.plats) {
       if (!p.alive) continue;
       const dxp = pivot.position.x - p.grp.position.x, ground = p.type === 'ground';
-      if (Math.abs(dxp) >= (ground ? p.w + 0.28 : JUMP.landW)) continue;   // paws must be over the planet, not over the air beside it
-      const top = p.grp.position.y + (ground ? p.top : surfaceAt(p, dxp));
+      if (Math.abs(dxp) >= (ground ? p.w + 0.28 : p.landW)) continue;   // paws must be over the planet, not over the air beside it
+      const top = p.grp.position.y + (ground || p.flat ? p.top : surfaceAt(p, dxp));
       if (top < g.takeoffY - JUMP.missDrop || (!ground && top < b.bot + 0.3)) continue;   // lower than the take-off, or off screen: not a landing
       if (y0 >= top - 0.02 && pivot.position.y <= top) {
         if (p.type === 'crumble') {   // a cracked meteorite holds exactly one push-off, then bursts and spills its ore: three stars
@@ -1710,7 +1758,8 @@ function jumpStep(dt) {
   // platforms: move, crumble/melt, recycle; new rows above
   for (let i = g.plats.length - 1; i >= 0; i--) {
     const p = g.plats[i];
-    if (p.vx) {   // a moving planet swings around its own spot, so the next planet stays within reach
+    if (p.wrap) { const W = b.xm + 0.6; p.grp.position.x += p.vx * dt; if (p.grp.position.x > W) p.grp.position.x -= 2 * W; else if (p.grp.position.x < -W) p.grp.position.x += 2 * W; }   // a shard of the turning ring: off one edge, back in at the other
+    else if (p.vx) {   // a moving planet swings around its own spot, so the next planet stays within reach
       p.grp.position.x += p.vx * dt;
       const lim = p.swing ?? 1.1;
       if (Math.abs(p.grp.position.x) > b.xm || Math.abs(p.grp.position.x - p.x0) > lim) { p.grp.position.x = THREE.MathUtils.clamp(THREE.MathUtils.clamp(p.grp.position.x, p.x0 - lim, p.x0 + lim), -b.xm, b.xm); p.vx = -p.vx; }
@@ -1730,6 +1779,7 @@ function jumpStep(dt) {
       al.material.rotation = THREE.MathUtils.clamp((p.grp.position.x - pivot.position.x) * 0.12, -0.22, 0.22);   // he leans toward Ori, watching
     }
     if (p.capSq > 0) { p.capSq = Math.max(0, p.capSq - dt / 0.32); const q = Math.sin(Math.PI * p.capSq); p.cap.scale.set(1 + 0.07 * q, 1 - 0.22 * q, 1 + 0.07 * q); }   // the snow cap squashes under the paws
+    if (p.dip > 0) { p.dip = Math.max(0, p.dip - dt / 0.3); p.body.position.y = -0.07 * Math.sin(Math.PI * p.dip); }   // a shard dips under the paws
     if (p.spin) { p.body.rotation.z += p.spin * dt; p.spin *= Math.max(0, 1 - 2.5 * dt); if (Math.abs(p.spin) < 0.05) p.spin = 0; }   // an asteroid wobbles from the push
     if (p.alive && p.skin > 0) {
       const px = p.grp.position.x, py = p.grp.position.y;
