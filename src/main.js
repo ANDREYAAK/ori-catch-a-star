@@ -719,6 +719,7 @@ async function startFinale_() {
     // "almost": how close the run came to the next goal, shown now and again under the replay button
     g.result = !g.dayStar ? `До звезды дня не хватило ${fmtScore(JUMP.goal - h)} м`
       : !g.dayShine ? `До сияния не хватило точек созвездия: ${g.need - g.lit}` : '';
+    if (!g.result && g.waveAlt != null && !g.supernova) g.result = `До конца Сверхновой не хватило ${Math.max(1, Math.ceil(novaEnd() - g.best))} м`;
     if (!g.result && !g.newRecord && rec - h > 0 && rec - h <= 10) g.result = `До рекорда не хватило ${rec - h} м`;
     gSay(`${g.newRecord ? 'Новый рекорд' : 'Высота'}: ${fmtScore(h)} м · ${g.newStarRecord ? 'рекорд звёзд' : 'звёзды'}: ★ ${g.bank}` + (g.result ? ` · ${g.result}` : g.newRecord ? '' : ` · рекорд ${fmtScore(Math.max(rec, h))} м`));
     await gwait(2600);
@@ -817,9 +818,9 @@ async function heroFinish_(shine) {
   const rec = store.get() || { used: [] };
   const keep = rec.date === TODAY && rec.phrase;
   phraseToday = keep ? rec.phrase : pickPhrase();
-  const shineAll = !!shine || !!(keep && rec.shine);
-  store.set({ date: TODAY, phrase: phraseToday, used: keep ? rec.used || [] : [...(rec.used || []), phraseToday].slice(-160), shine: shineAll, constellation: g.shape.name });
-  $('#phrase').textContent = phraseToday; applyShine(shineAll);
+  const shineAll = !!shine || !!(keep && rec.shine), novaAll = !!g.supernova || !!(keep && rec.nova);   // the best of the day stays
+  store.set({ date: TODAY, phrase: phraseToday, used: keep ? rec.used || [] : [...(rec.used || []), phraseToday].slice(-160), shine: shineAll, nova: novaAll, constellation: g.shape.name });
+  $('#phrase').textContent = phraseToday; applyShine(shineAll, novaAll);
   // the "almost" line, right above "Сыграть ещё" (not "short of the shine" when today's star already shines from an earlier run)
   gResult.textContent = shineAll && !shine && /сияния/.test(g.result || '') ? '' : g.result || '';
   await gwait(500);
@@ -832,9 +833,10 @@ async function heroFinish_(shine) {
   unparkBall(); busy = false;
 }
 const gResult = $('#gResult');
-function applyShine(shine) {
+function applyShine(shine, nova) {
   const card = screens.s3.querySelector('.card'); card.classList.toggle('shine', !!shine);
-  const from = card.querySelector('.from'); from.textContent = shine ? 'Ори поймал для вас сияющую звезду' : 'Ори поймал для вас звезду';
+  card.classList.toggle('nova', !!nova);
+  const from = card.querySelector('.from'); from.textContent = nova ? 'Ори поймал для вас сверхновую звезду' : shine ? 'Ори поймал для вас сияющую звезду' : 'Ори поймал для вас звезду';
 }
 // ✕ in the round: drop everything and go back to the screen the game was started from
 function quitGame() {
@@ -902,6 +904,9 @@ const LEVELS = [
   { name: 'Грозовая туманность', gap: [1.6, 1.9], dx: [1.7, 2.0], ring: 0, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, bolt: [5, 3.6], star: 0.45, bonus: 0.05, tip: 'Облака пружинят — подбрасывают выше' },
   // a graveyard of satellites: wide, but only the middle holds (a panel tips under the paws and slides him off); later some of them spin
   { name: 'Кладбище спутников', gap: [1.55, 1.85], dx: [1.7, 2.0], ring: 0, move: 0, ice: 0, orbit: false, crumble: 0, hot: 0, hole: 0, meteor: 0, gust: 0, spinner: [0.3, 0.45], star: 0.45, bonus: 0.05, tip: 'Спутник кренится под лапами — садись на середину' },
+  // THE SUPER LEVEL. A supernova: a wave of light climbs from below and must be outrun; every planet burns away after one
+  // push-off, so there is no waiting; the hazards of the first five levels are mixed. Its end is the second goal of the game.
+  { name: 'Сверхновая', title: 'Суперуровень · Сверхновая', nova: true, gap: [1.6, 1.9], dx: [1.8, 2.0], ring: 0.1, move: 0.15, ice: 0, orbit: false, crumble: 0.3, hot: 0.25, hole: 0.15, meteor: 5, gust: 7, star: 0.4, bonus: 0.06, tip: 'Волна света идёт снизу — не останавливайся. Планеты сгорают после прыжка' },
 ];
 const lvl = (v, d) => Array.isArray(v) ? v[0] + (v[1] - v[0]) * d : v;
 // After the six levels (120 m) the climb goes on in LAPS of 20 m: deep space bent one way each time, in the sky of
@@ -917,7 +922,9 @@ const LAPS = [
 const LAST = LEVELS.length - 1;
 // the definition of level n (0-based): the six levels, then the laps over deep space
 function levelDef(n) { if (n <= LAST) return LEVELS[n]; const lap = LAPS[(n - LAST - 1) % LAPS.length]; return lap.def || (lap.def = { ...LEVELS[lap.zone], gap: LEVELS[LAST].gap, dx: LEVELS[LAST].dx, ...lap }); }
-const levelTitle = (n) => n <= LAST ? `Уровень ${n + 1} · ${LEVELS[n].name}` : `Виток ${n - LAST} · ${levelDef(n).name}`;
+const NOVA = { wave: [1.0, 1.4], lead: 9, max: 11, close: 3 };   // the wave's speed over the level (m/s), where it starts below him, how far it may fall behind
+const novaEnd = () => (LAST + 1) * JUMP.levelH;   // the super level is the last one
+const levelTitle = (n) => n <= LAST ? LEVELS[n].title || `Уровень ${n + 1} · ${LEVELS[n].name}` : `Виток ${n - LAST} · ${levelDef(n).name}`;
 const zoneOf = (n) => n <= LAST ? n : levelDef(n).zone;
 // Every level has its OWN pair of things and its own planets; they do not carry over to the next level.
 // Only the last one, deep space, mixes them all (and the laps after it bend one level's pair further).
@@ -925,13 +932,13 @@ const zoneOf = (n) => n <= LAST ? n : levelDef(n).zone;
 //   Орбита: planets, then the ringed planet · Пояс астероидов: meteorites, then flying meteors ·
 //   Ледяная туманность: ice, then drifting planets · Солнечный ветер: red dwarfs, then their wind ·
 //   Чёрные дыры: holes, then planets orbiting across the screen · Глубокий космос: everything together
-const STAGE_INTRO = [null, 'ring', 'crumble', 'meteor', 'ice', 'move', 'hot', 'gust', 'hole', 'orbit', null, null, 'alien', 'visit', null, 'belt', null, 'bolt', null, 'spinner'];
+const STAGE_INTRO = [null, 'ring', 'crumble', 'meteor', 'ice', 'move', 'hot', 'gust', 'hole', 'orbit', null, null, 'alien', 'visit', null, 'belt', null, 'bolt', null, 'spinner', null, null];
 // where each thing first appears, in levels (1.5 = the middle of level 2). Nothing is generated before that
 const FEATURE_AT = Object.fromEntries(STAGE_INTRO.map((f, i) => [f, i / 2]).filter(([f]) => f));
 const MAIN_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'visit', 'belt', 'spinner']);                // shown as the row's own planet
 const ROW_INTRO = new Set(['ring', 'ice', 'move', 'orbit', 'crumble', 'hot', 'hole', 'alien', 'visit', 'belt', 'spinner']);   // meteors and wind are shown by jumpStep
 // a key star (a point of the constellation) hangs behind the thing its level is about
-const KEY_SIG = ['ring', 'crumble', 'ice', 'hot', 'hole', null, 'alien', null, null, null];   // by zone
+const KEY_SIG = ['ring', 'crumble', 'ice', 'hot', 'hole', null, 'alien', null, null, null, null];   // by zone
 // the first time a new thing comes into view, one line explains it
 const INTRO_TIP = {
   ring: 'Планета с кольцом подбрасывает намного выше',
@@ -974,6 +981,8 @@ const ZONES = [
     amb: { n: 0.45, col: [0xcfd0ff, 0x9aa0e0], v: [-0.3, -1.1], s: [0.02, 0.035], life: 2.2, sway: 0.05 } },   // slanting rain
   { accent: '#7FF0E0', star: '#dff8ff', bg: zoneBg([[80, 34, 22, 24, 'rgba(90,220,230,.16)'], [80, 34, 80, 60, 'rgba(255,120,80,.1)']], '#22404a', '#111f2a', '#0b141c', '#04080c'),
     amb: { n: 0.22, col: [0xffffff, 0x9fe8ff, 0xffc08a], v: [-0.22, -0.05], s: [0.02, 0.05], life: 4, sway: 0.12 } },   // glints of drifting junk
+  { accent: '#FFE9A8', star: '#fff4d6', bg: zoneBg([[150, 60, 50, 112, 'rgba(255,225,150,.55)'], [90, 40, 50, -6, 'rgba(255,120,60,.2)']], '#6a4030', '#2c1b22', '#1c1220', '#40280f'),
+    amb: { n: 0.5, col: [0xffe9a8, 0xffffff, 0xffb347], v: [0, 1.5], s: [0.025, 0.05], life: 2.2, sway: 0.4 } },   // embers flying up from the blast
 ];
 const zoneEls = [...document.querySelectorAll('#zone i')], zoneStar = new THREE.Color('#dfe7ff');
 let zoneIdx = -1, zoneTop = 0;
@@ -1079,10 +1088,12 @@ function updateScore() {
   const cnt = game.need ? (game.lit >= game.need ? '✓' : `${game.lit}/${game.need}`) : '';
   if (cnt !== hud.cnt) { hud.cnt = cnt; gCount.textContent = cnt; gCount.classList.toggle('full', cnt === '✓'); }
   // the bar is the way to the star of the day; once it is caught, the way to the next hundred metres (its number replaces the star)
-  const base = game.dayStar ? Math.floor(Math.max(0, game.alt || 0) / JUMP.goal) * JUMP.goal : 0;
-  const f = THREE.MathUtils.clamp(((game.alt || 0) - base) / JUMP.goal, 0, 1), fb = base ? f : THREE.MathUtils.clamp((game.best || 0) / JUMP.goal, 0, 1);
-  const lab = base ? String(base + JUMP.goal) : '★';
-  if (lab !== hud.lab) { hud.lab = lab; gAltStar.textContent = lab; gAltStar.classList.toggle('num', !!base); }
+  const toNova = game.dayStar && !game.supernova, alt = Math.max(0, game.alt || 0);
+  const base = toNova ? JUMP.goal : game.dayStar ? Math.floor(alt / 100) * 100 : 0, span = toNova ? novaEnd() - JUMP.goal : game.dayStar ? 100 : JUMP.goal;
+  const f = THREE.MathUtils.clamp((alt - base) / span, 0, 1), fb = base ? f : THREE.MathUtils.clamp((game.best || 0) / JUMP.goal, 0, 1);
+  const lab = toNova ? '✹' : base ? String(base + 100) : '★';
+  if (toNova !== hud.toNova) { hud.toNova = toNova; gAltStar.classList.toggle('nova', toNova); }
+  if (lab !== hud.lab) { hud.lab = lab; gAltStar.textContent = lab; gAltStar.classList.toggle('num', !!base && !toNova); }
   const fill = `scaleY(${fb.toFixed(3)})`, me = `${(f * 100).toFixed(1)}%`;
   if (fill !== hud.fill) { hud.fill = fill; gAltFill.style.transform = fill; }
   if (me !== hud.me) { hud.me = me; gAltMe.style.bottom = me; }
@@ -1327,7 +1338,8 @@ function makePlatform(type, x, y) {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(1.15); grp.add(glow); grp.userData.glow = glow;
   } else {
     // the planet of the level this row belongs to (deep space mixes them all)
-    let skin = game.skinZone ?? 0; if (skin === 5) skin = Math.floor(Math.random() * 5);
+    let skin = game.skinZone ?? 0; const nova = skin === 10; if (skin === 5 || nova) skin = Math.floor(Math.random() * 5);
+    if (nova && type !== 'rescue') grp.userData.nova = true;
     const mat = type === 'rescue' ? jumpMat.lime : SKINS[skin][Math.floor(Math.random() * SKINS[skin].length)];
     const shard = skin === 7 && type !== 'rescue', cloud = skin === 8 && type !== 'rescue';
     const sat = skin === 9 && type !== 'rescue';
@@ -1351,7 +1363,7 @@ function makePlatform(type, x, y) {
   }
   if (type === 'ring') { const r = new THREE.Mesh(jumpGeo.ring, jumpMat.lime); r.rotation.x = Math.PI / 2 - 0.35; r.rotation.y = 0.25; grp.add(r); }
   grp.position.set(x, y, type === 'ground' ? 0 : -0.55); scene.add(grp);   // planets sit behind Ori's plane so he never cuts into them
-  const p = { grp, body, type, skin: grp.userData.skin ?? -1, glow: grp.userData.glow, cap: grp.userData.cap, alien: grp.userData.alien, occupied: type === 'alien', visitT: Math.random() * 4.8, flat: !!grp.userData.flat, landW: grp.userData.landW ?? JUMP.landW, flick: grp.userData.flick, blink: grp.userData.blink, rot: type === 'spinner' ? Math.random() * 6.28 : 0, rotV: type === 'spinner' ? (Math.random() < 0.5 ? -1 : 1) * 1.15 : 0, tilt: 0, tiltV: 0, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
+  const p = { grp, body, type, skin: grp.userData.skin ?? -1, glow: grp.userData.glow, cap: grp.userData.cap, alien: grp.userData.alien, occupied: type === 'alien', visitT: Math.random() * 4.8, flat: !!grp.userData.flat, landW: grp.userData.landW ?? JUMP.landW, flick: grp.userData.flick, nova: !!grp.userData.nova, blink: grp.userData.blink, rot: type === 'spinner' ? Math.random() * 6.28 : 0, rotV: type === 'spinner' ? (Math.random() < 0.5 ? -1 : 1) * 1.15 : 0, tilt: 0, tiltV: 0, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
   if (type === 'move') { p.vx = (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.5); p.swing = 1.1; }
   if (type === 'orbit' || type === 'belt') p.swing = 99;
   if (p.flat) p.top = grp.userData.top;
@@ -1503,6 +1515,27 @@ function jumpRow() {
   } else if (!calm && Math.random() < L.bonus) jumpBonus(THREE.MathUtils.clamp(x + (Math.random() - 0.5) * 1.4, -xm, xm), y + 0.9);
   g.nextY = y; g.lastX = x; g.lastType = type;
 }
+// the wave of the supernova: a wall of light that climbs from below. Its front is at g.waveAlt (metres)
+const waveTex = spriteTex((x, s) => { const g = x.createLinearGradient(0, 0, 0, s); g.addColorStop(0, 'rgba(255,220,140,0)'); g.addColorStop(0.1, 'rgba(255,200,110,.35)'); g.addColorStop(0.16, 'rgba(255,240,190,.95)'); g.addColorStop(0.24, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,1)'); x.fillStyle = g; x.fillRect(0, 0, s, s); }, 128);
+let waveSp = null;
+function stepWave(dt, b, L, d) {
+  const g = game;
+  const on = !!L.nova && !g.supernova; if (on !== hud.nova) { hud.nova = on; document.body.classList.toggle('nova', on); }   // (the dark strip under the hint line would hide the wave)
+  if (!on) { if (waveSp && waveSp.visible) { waveSp.material.opacity -= dt * 1.5; waveSp.position.y -= dt * 3; if (waveSp.material.opacity <= 0) waveSp.visible = false; } return; }
+  if (g.waveAlt == null) g.waveAlt = g.alt - NOVA.lead;
+  g.waveAlt = Math.max(g.waveAlt + lvl(NOVA.wave, d) * dt, g.alt - NOVA.max);
+  if (g.invuln > 0) g.waveAlt = Math.min(g.waveAlt, g.alt - 5);   // just rescued by the bubble: the wave gives him room
+  if (!waveSp) { waveSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: waveTex, transparent: true, depthWrite: false })); waveSp.scale.set(16, 10, 1); waveSp.renderOrder = 5; scene.add(waveSp); }
+  const y = g.baseY + g.waveAlt - g.scrolled;   // the front on screen; the sprite's front line is 16% from its top
+  waveSp.visible = true; waveSp.material.opacity = 1; waveSp.position.set(0, y - 5 + 1.6, 0.6);
+  for (let k = 0, n = emit(0.9, dt); k < n; k++) { const f = spawnFaller(rnd(-b.xm - 1, b.xm + 1), y + rnd(-0.1, 0.4), 0.5, new THREE.Vector3(rnd(-0.3, 0.3), rnd(1, 2.6), 0), rnd(0.04, 0.08), rnd(0.4, 0.8)); f.material.color.set(Math.random() < 0.5 ? 0xffffff : 0xffd98a); }
+  const gap = g.alt - g.waveAlt;
+  if (gap < NOVA.close && g.clock > (g.waveWarn || 0)) { g.waveWarn = g.clock + 2.5; gSay('Волна близко — выше!', 800); sfx.play('warn'); }
+  if (gap < -0.15 && g.rocket <= 0) {
+    if (g.bubble) { useBubble('волны'); g.waveAlt = g.alt - 7; g.vy = JUMP.v0 * 1.3; setTakeoff(-Infinity); g.invuln = 1.2; }
+    else { pivot.position.y = b.bot - 1; jumpLose('Сверхновая догнала Ори.'); }
+  }
+}
 function spawnBolt() {
   const g = game, b = jumpBounds(), first = !g.boltSeen;
   const x = THREE.MathUtils.clamp(pivot.position.x + rnd(-0.45, 0.45), -b.xm, b.xm), H = b.top - b.bot + 1;
@@ -1575,7 +1608,7 @@ function jumpStart() {
   const g = game;
   Object.assign(g, { plats: [], bonuses: [], holes: [], vy: 0, slip: 0, alt: 0, best: 0, scrolled: 0, level: 0, bank: 0, saves: 0, series: 0, bestSeries: 0,
     bubbleAt: JUMP.bubble[0] + Math.random() * 12, hop: 1, nearT: 0, tipQ: [], recAt: getRecord(), recTip: false, recPassed: false, litTip: false, litDone: false, result: '',
-    dashReady: false, face: Math.random() < 0.5 ? -1 : 1, spinT: 0, rocket: 0, bubble: false, magnet: 0, wind: 0, windT: 0, gustIn: 99, dayStar: false, dayShine: false, holeRecent: 0, perfects: 0,
+    dashReady: false, face: Math.random() < 0.5 ? -1 : 1, spinT: 0, rocket: 0, bubble: false, magnet: 0, wind: 0, windT: 0, gustIn: 99, dayStar: false, dayShine: false, supernova: false, waveAlt: null, waveWarn: 0, holeRecent: 0, perfects: 0,
     knock: 0, knockV: 0, scald: 0, vx: 0, rowN: 0, bolts: [], boltIn: 2, boltSeen: false, beltDir: Math.random() < 0.5 ? -1 : 1, orbitIn: 4, tipped: {}, genStage: 0, keyAt: 3, keyOut: false, gustSeen: false, gustOn: false, windAmp: 2.3, introLeft: 0, intro: [], lastType: 'planet', meteorSeen: false, falling: false, fallT: 0 });
   g.takeoffY = g.baseY;
   g.nextY = g.baseY; g.lastX = 0; g.meteorIn = 99; g.dayY = g.baseY + JUMP.goal; g.dayX = 0;
@@ -1596,6 +1629,8 @@ function jumpCleanup() {
   g.bonuses = []; g.holes = [];
   if (g.day) { scene.remove(g.day); g.day = null; }
   if (g.bubbleSp) g.bubbleSp.visible = false;
+  if (waveSp) waveSp.visible = false;
+  document.body.classList.remove('nova'); hud.nova = false;
 }
 // the height he pushed off from: below it (minus a little) nothing can catch him any more
 function setTakeoff(y) { const g = game; g.takeoffY = y; g.falling = false; g.fallT = 0; }
@@ -1727,6 +1762,10 @@ function jumpLand(p, top) {
   }
   if (p.type === 'ring') for (let k = 0; k < 12; k++) { const a = Math.random() * Math.PI; const f = spawnFaller(p.grp.position.x, top, 0.2, new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 1.5, 0), 0.06, 0.5); f.material.color.set(0xd9f38b); }
   jumpBounce(v);
+  if (p.nova && p.alive) {   // the supernova: the planet burns away under him, there is no second landing
+    p.alive = false; p.gone = 0.001; p.novaBurn = true;
+    for (let k = 0; k < 14; k++) { const a = Math.random() * Math.PI * 2; const f = spawnFaller(p.grp.position.x + Math.cos(a) * 0.3, p.grp.position.y + Math.sin(a) * 0.3, 0.2, new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 1.2 + 0.5, 0), rnd(0.05, 0.09), rnd(0.4, 0.7)); f.material.color.set(Math.random() < 0.5 ? 0xffe9a8 : 0xff7a2a); }
+  }
   if (p.wrap) g.slip = p.vx * 0.9;   // the turning ring carries him along
   if (p.skin === 9) {   // a satellite holds only in the middle: out on a panel it tips and slides him off that way
     const k = dxp / p.landW, over = Math.max(0, Math.abs(k) - SAT.hold) / (1 - SAT.hold);
@@ -1860,6 +1899,11 @@ function jumpStep(dt) {
   const lv = jumpLevel();
   if (lv.n > g.level) {
     g.level = lv.n; const L = levelDef(lv.n); setZone(zoneOf(lv.n));
+    if (lv.n === LAST + 1 && g.waveAlt != null && !g.supernova) {   // the whole super level is behind him: the second goal of the game
+      g.supernova = true; flash.style.opacity = 0.7; setTimeout(() => { flash.style.opacity = 0; }, 220); sfx.play('day'); g.wag = 3;
+      for (let k = 0; k < 40; k++) { const a = Math.random() * Math.PI * 2, r = 1.2 + Math.random() * 2.2; const f = spawnFaller(pivot.position.x, pivot.position.y + 0.6, 0.3, new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 0), rnd(0.06, 0.12), rnd(0.6, 1.1)); f.material.color.set(Math.random() < 0.5 ? 0xffe9a8 : 0xffffff); }
+      gPop('Сверхновая пройдена!', toScreen(new THREE.Vector3(pivot.position.x, pivot.position.y + 1.6, 0))); g.tipQ.unshift(['Сверхновая позади — Ори несёт сверхновую звезду!', 2600]); updateScore();
+    }
     gLvl.textContent = levelTitle(lv.n); gSay(levelTitle(lv.n), 1800); if (L.tip) g.tipQ.push([L.tip, 2200]);   // a lap says what it bends
     g.meteorIn = Math.min(g.meteorIn, 3); if (L.gust) g.gustIn = Math.min(g.gustIn, 2.5); sfx.play('level');
   }
@@ -1932,6 +1976,7 @@ function jumpStep(dt) {
     if (p.gone > 0) {
       p.gone += dt;
       if (p.type === 'crumble') { p.grp.position.y -= 3 * p.gone * dt * 10; p.grp.rotation.z += 3 * dt; p.body.scale.multiplyScalar(1 - dt * 1.2); }
+      else if (p.novaBurn) p.grp.scale.multiplyScalar(Math.max(0, 1 - dt * 4));   // (its material is shared: it shrinks, it does not fade)
       else { p.body.material.opacity = Math.max(0, 0.82 - p.gone * 2.2); p.body.scale.multiplyScalar(1 - dt * 1.5); }
       // an ice comet freezes back after a while, so the way up never disappears for good
       if (p.type === 'ice' && p.gone > 0.7) {
@@ -2056,6 +2101,7 @@ function jumpStep(dt) {
     }
     if (Math.abs(mt.sp.position.x) > b.xm + 2 || mt.sp.position.y < b.bot - 1) removeMeteor(i);
   }
+  stepWave(dt, b, L, dNow); if (!g.playing) return;
   // lightning of the storm nebula
   const bEvery = g.alt >= FEATURE_AT.bolt * JUMP.levelH ? lvl(L.bolt || 0, dNow) : 0;
   if (bEvery > 0) { g.boltIn -= dt; if (g.boltIn <= 0) { spawnBolt(); g.boltIn = Math.max(2.4, bEvery * Math.pow(0.92, lv.extra)) * (0.8 + Math.random() * 0.4); } }
@@ -2712,7 +2758,7 @@ function tick(_ts, simDt) {
   $('#loading').style.opacity = 0; setTimeout(() => $('#loading').remove(), 500);
   const saved = store.get();
   if (saved && saved.date === TODAY && saved.phrase) {
-    phraseToday = saved.phrase; $('#phrase').textContent = saved.phrase; applyShine(saved.shine); showScreen('s3'); setFrame('s3');
+    phraseToday = saved.phrase; $('#phrase').textContent = saved.phrase; applyShine(saved.shine, saved.nova); showScreen('s3'); setFrame('s3');
   }
   play('idle');
   window.__ori = { get actions() { return actions; }, get mixer() { return mixer; }, play, game, tick, sim: (dt) => tick(0, dt), toScreen, startGame, camera, renderer, eyes, blink, spin, pointer, flick: (x, z) => flickBall(new THREE.Vector3(x, 0, z)), get pivot() { return pivot; }, get ball() { return fetch_.ball; }, scene, phys, sit, pant, get busy() { return busy; }, get cur() { return current && current.getClip().name; }, get pupil() { const e = eyes.pupils[0]; return e ? [e.node.position.x - e.base.x, e.node.position.y - e.base.y, e.node.position.z - e.base.z] : null; } };
