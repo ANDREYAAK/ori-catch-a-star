@@ -689,7 +689,7 @@ async function startGame_() {
   jumpStart();
   updateScore();
   document.body.classList.add('night', 'gaming'); gEl.classList.remove('done'); gEl.classList.add('show');
-  gSay('Допрыгни до звезды дня — она на 100 м');
+  gSay(`Допрыгни до звезды дня — она на ${JUMP.goal} м`);
   play('idle', { fade: 0.3 });
   await gwait(1100);
   game.mouthY0 = mouthWorld().y; game.mouthOff = mouthWorld().sub(pivot.position);
@@ -869,21 +869,21 @@ function gameStep(dt) {
 }
 
 /* ---------- "Прыжки к звёздам": endless climb over planets ---------- */
-// Goal: the star of the day hangs at 100 m (its light is always visible at the top and grows as Ori nears it).
+// Goal: the star of the day hangs at JUMP.goal (150 m: five levels of 30 m) (its light is always visible at the top and grows as Ori nears it).
 // Every caught star lights a third of a point of the constellation of the day; the star of the day shines if the
-// constellation is complete when he gets it (or gets completed after). After 100 m the climb goes on for a record:
+// constellation is complete when he gets it (or gets completed after). After the goal the climb goes on for a record:
 // one more level of deep space, then laps (see LAPS).
 // Ori bounces by himself, the finger steers, a tap in the air is a hop (one charge, refilled by a perfect landing).
 // A miss ends the run: once he drops below the planet he pushed off from, nothing catches him, unless he carries
 // the bubble (rare, about one per run), which catches him once. Perfect landings (close to the planet's centre)
 // build a series: from the 3rd one stars count x2, every 5th one gives a dash (a much higher bounce).
-// Levels every 20 m; ONE new thing every 10 m (see STAGE_INTRO), shown first in a safe form in a few
+// Levels every 30 m (JUMP.levelH); ONE new thing every half level (see STAGE_INTRO), shown first in a safe form in a few
 // easier rows (a sawtooth difficulty curve). Ordinary stars are the score; the constellation is lit by
 // KEY stars (one per point), each hung behind the thing its level is about (see KEY_SIG). Inside a level the gaps and the share of
 // hazards grow smoothly. Every row has one reachable safe planet; no two bodies ever come closer than minSep.
 // bubble: [first, every] = metres of the first bubble and the spacing after it (+ up to half again at random)
 // hop = the take-off speed of the mid-air hop; edge = a landing this far off centre (share of landW) is "on a hair"
-const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 20, goal: 100, maxGap: 1.95, minGap: 1.15, speed: 3.6,
+const JUMP = { g: 10, v0: 6.8, boost: 1.75, dash: 1.75, levelH: 30, goal: 150, maxGap: 1.95, minGap: 1.15, speed: 3.6,
   orbitEvery: [4, 5], perfect: 0.13, introRows: 3, minSep: 1.1, holeSep: 1.45, missDrop: 0.45, landW: 0.46, foot: 0.14,
   bubble: [18, 40], hop: 5.2, edge: 0.78, trailRows: 2 };
 // [a, b] = the value at the start and at the end of the level; meteor = seconds between meteors
@@ -1192,7 +1192,7 @@ function makePlatform(type, x, y) {
     const mat = type === 'rescue' ? jumpMat.lime : SKINS[skin][Math.floor(Math.random() * SKINS[skin].length)];
     body = new THREE.Mesh(skin === 1 && type !== 'rescue' ? jumpGeo.asteroid : jumpGeo.planet, mat); body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
     if (type !== 'rescue') { grp.userData.skin = skin; const halo = new THREE.Sprite(haloMat[skin]); halo.scale.setScalar(1.22); halo.position.z = -0.12; grp.add(halo);
-      if (skin === 2) { const cap = new THREE.Mesh(snowCaps[Math.floor(Math.random() * snowCaps.length)], snowMat); cap.rotation.set(rnd(-0.1, 0.1), rnd(0, 6.28), rnd(-0.1, 0.1)); grp.add(cap); } }
+      if (skin === 2) { const cap = new THREE.Mesh(snowCaps[Math.floor(Math.random() * snowCaps.length)], snowMat); cap.rotation.set(rnd(-0.1, 0.1), rnd(0, 6.28), rnd(-0.1, 0.1)); grp.add(cap); grp.userData.cap = cap; } }
     if (type === 'move' || type === 'orbit') { const b = new THREE.Mesh(jumpGeo.belt, jumpMat.belt); b.rotation.x = Math.PI / 2 - 0.25; grp.add(b); }
   }
   grp.add(body);
@@ -1203,7 +1203,7 @@ function makePlatform(type, x, y) {
   }
   if (type === 'ring') { const r = new THREE.Mesh(jumpGeo.ring, jumpMat.lime); r.rotation.x = Math.PI / 2 - 0.35; r.rotation.y = 0.25; grp.add(r); }
   grp.position.set(x, y, type === 'ground' ? 0 : -0.55); scene.add(grp);   // planets sit behind Ori's plane so he never cuts into them
-  const p = { grp, body, type, skin: grp.userData.skin ?? -1, glow: grp.userData.glow, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
+  const p = { grp, body, type, skin: grp.userData.skin ?? -1, glow: grp.userData.glow, cap: grp.userData.cap, x0: x, w: type === 'ground' ? 1.4 : 0.42, top: type === 'ground' ? 0 : type === 'crumble' ? 0.34 : PLANET_R - 0.02, vx: 0, alive: true, gone: 0 };
   if (type === 'move') { p.vx = (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.5); p.swing = 1.1; }
   if (type === 'orbit') p.swing = 99;
   game.plats.push(p); return p;
@@ -1466,9 +1466,30 @@ function nearMiss(at) {
   const g = game; if (g.clock < g.nearT) return; g.nearT = g.clock + 1.5;
   g.bank++; gPop('На волоске! +1 ★', at); sfx.play('star', 1); updateScore();
 }
+// what a landing kicks up depends on the planet: snow off a frozen one (and its cap squashes), sparks and smoke
+// off a charred one, a low cloud of dust off an asteroid (which wobbles), a ring of motes off a violet one
+function landFx(p, x, top) {
+  const puff = (n, col, vx, vy, size, life, fin = 0) => { for (let k = 0; k < n; k++) { const f = spawnFaller(x + rnd(-0.16, 0.16), top + rnd(0, 0.06), 0.25, new THREE.Vector3(vx(), vy(), 0), rnd(size[0], size[1]), rnd(life[0], life[1])); f.material.color.set(Array.isArray(col) ? col[Math.floor(Math.random() * col.length)] : col); f.userData.fin = fin; } };
+  if (p.skin === 2) {
+    puff(16, [0xffffff, 0xdff2ff], () => rnd(-1.5, 1.5), () => rnd(0.3, 1.5), [0.05, 0.09], [0.35, 0.6]);        // a spray of snow
+    puff(8, 0xffffff, () => rnd(-0.5, 0.5), () => rnd(-0.35, -0.1), [0.035, 0.05], [0.9, 1.5], 0.15);              // flakes sliding off the cap
+    if (p.cap) p.capSq = 1;
+  } else if (p.skin === 3) {
+    puff(14, [0xff7a2a, 0xffc24a, 0xff4a1c], () => rnd(-1.7, 1.7), () => rnd(0.5, 2.0), [0.035, 0.065], [0.3, 0.55]);   // sparks
+    puff(7, 0x8f8088, () => rnd(-0.45, 0.45), () => rnd(0.35, 0.8), [0.1, 0.17], [0.8, 1.3], 0.15);                    // a puff of smoke
+  } else if (p.skin === 1) {
+    puff(16, [0xb9a79a, 0x8d8290, 0xc9b6a2], () => rnd(-1.5, 1.5), () => rnd(0, 0.45), [0.08, 0.15], [0.5, 0.9], 0.08);   // dust along the surface
+    puff(5, 0x6f6a70, () => rnd(-1.0, 1.0), () => rnd(0.8, 1.6), [0.04, 0.06], [0.4, 0.6]);                              // pebbles
+    p.spin = (x > p.grp.position.x ? -1 : 1) * rnd(1.2, 2.2);
+  } else if (p.skin === 4) {
+    for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2, f = spawnFaller(x + Math.cos(a) * 0.12, top + 0.05 + Math.sin(a) * 0.05, 0.25, new THREE.Vector3(Math.cos(a) * 1.5, Math.sin(a) * 0.6, 0), 0.05, 0.5); f.material.color.set(k % 3 ? 0xb39cff : 0xd9f38b); }   // a ring spreading out
+  } else if (p.skin === 0) {
+    puff(8, [0xffffff, 0xd9f38b], () => rnd(-1.0, 1.0), () => rnd(0.2, 0.9), [0.03, 0.05], [0.3, 0.5]);
+  }
+}
 function jumpLand(p, top) {
   const g = game, dxp = pivot.position.x - p.grp.position.x;
-  pivot.position.y = top; setTakeoff(top);
+  pivot.position.y = top; setTakeoff(top); landFx(p, pivot.position.x, top);
   if (p.type === 'ice') {   // a comet takes three landings: cracks, more cracks, then it shatters. Slippery: he keeps sliding a little
     p.hp = (p.hp ?? 3) - 1;   // (the slide itself is set after jumpBounce below, which resets slip)
     if (p.hp > 0) {
@@ -1644,6 +1665,8 @@ function jumpStep(dt) {
       const lim = p.swing ?? 1.1;
       if (Math.abs(p.grp.position.x) > b.xm || Math.abs(p.grp.position.x - p.x0) > lim) { p.grp.position.x = THREE.MathUtils.clamp(THREE.MathUtils.clamp(p.grp.position.x, p.x0 - lim, p.x0 + lim), -b.xm, b.xm); p.vx = -p.vx; }
     }
+    if (p.capSq > 0) { p.capSq = Math.max(0, p.capSq - dt / 0.32); const q = Math.sin(Math.PI * p.capSq); p.cap.scale.set(1 + 0.07 * q, 1 - 0.22 * q, 1 + 0.07 * q); }   // the snow cap squashes under the paws
+    if (p.spin) { p.body.rotation.z += p.spin * dt; p.spin *= Math.max(0, 1 - 2.5 * dt); if (Math.abs(p.spin) < 0.05) p.spin = 0; }   // an asteroid wobbles from the push
     if (p.alive && p.skin > 0) {
       const px = p.grp.position.x, py = p.grp.position.y;
       if (p.skin === 3) for (let k = 0, n = emit(0.07, dt); k < n; k++) { const f = spawnFaller(px + rnd(-0.22, 0.22), py + rnd(0.2, 0.36), -0.3, new THREE.Vector3(rnd(-0.1, 0.1), rnd(0.3, 0.55), 0), rnd(0.07, 0.13), rnd(1.2, 2)); f.material.color.set(0x8f8088); f.userData.fin = 0.4; }   // smoke
@@ -1680,7 +1703,7 @@ function jumpStep(dt) {
     if (u.glow) { u.glow.position.copy(s.position); u.glow.scale.setScalar(u.base * (2.2 + 0.5 * Math.sin(u.age * 3.1))); }
     if (g.magnet > 0) { const d = body.clone().sub(s.position); d.z = 0; const L2 = d.length(); if (L2 < 3.6) { s.position.addScaledVector(d.normalize(), Math.min(L2, 8 * dt)); for (let k = 0, n = emit(1.2, dt); k < n; k++) spawnFaller(s.position.x, s.position.y, 0.1, new THREE.Vector3(-d.x * 0.5, -d.y * 0.5, 0), 0.05, 0.35); } }
     if (Math.hypot(s.position.x - body.x, s.position.y - body.y) < 0.65) { jumpCollectStar(i); continue; }
-    if (u.kind === 'key' && s.position.y < b.top - 0.6) tipLater('key', 'Большая звезда — точка созвездия. Собери все до 100 м, и звезда дня засияет');
+    if (u.kind === 'key' && s.position.y < b.top - 0.6) tipLater('key', `Большая звезда — точка созвездия. Собери все до ${JUMP.goal} м, и звезда дня засияет`);
     if (s.position.y < b.bot - 1) {
       if (u.kind === 'key') { g.keyOut = false; g.keyAt = g.alt + 4; gSay('Точка созвездия осталась внизу — скоро будет ещё одна', 1200); }   // missed: another one soon
       removeGameStar(i, false);
