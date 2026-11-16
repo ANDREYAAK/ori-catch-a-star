@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import BOW from './bow.json';   // the play bow: a clip keyed in Blender on the web rig (ori.glb), kept apart from the model
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';   // the model is meshopt-compressed (~4x smaller)
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -28,6 +29,7 @@ const CLIPS = {
   sit:        { a: 1098, b: 1146, loop: true },
   sitUp:      { a: 1146, b: 1166 },
   belly:      { a: 1230, b: 1326 },
+  bow:        { a: 0, b: BOW.frames, extra: BOW },   // not a part of the model's own action: built from its own tracks
 };
 // BELLY v2 lies with a straight back on the floor without squashing the torso: morph target Flat stays at 0
 const flatAt = () => 0;
@@ -342,6 +344,12 @@ function makeAction(gltfClip, name) {
   return act;
 }
 
+// a clip that came apart from the model: { times, tracks: [{ bone, path, values }] } in the model's own bone space
+function extraAction(data, name) {
+  const tracks = data.tracks.map((t) => new (t.path === 'quaternion' ? THREE.QuaternionKeyframeTrack : THREE.VectorKeyframeTrack)(`${THREE.PropertyBinding.sanitizeNodeName(t.bone)}.${t.path}`, data.times, t.values));
+  const act = mixer.clipAction(new THREE.AnimationClip(name, data.times[data.times.length - 1], tracks));
+  act.setLoop(THREE.LoopOnce, Infinity); act.clampWhenFinished = true; return act;
+}
 function play(name, { fade = 0.25, onDone, speed = 1 } = {}) {
   const next = actions[name]; if (!next) return;
   if (current && current !== next) current.fadeOut(fade);
@@ -379,7 +387,7 @@ async function loadModel() {
       ori.position.set(-ctr.x, 0, -ctr.z);
       mixer = new THREE.AnimationMixer(ori);
       const clip = gltf.animations[0];
-      for (const k in CLIPS) actions[k] = makeAction(clip, k);
+      for (const k in CLIPS) actions[k] = CLIPS[k].extra ? extraAction(CLIPS[k].extra, k) : makeAction(clip, k);
       // additive overlays: only the listed bones, relative to a rest frame (rng.ref)
       const additive = (name, rng, keep) => {
         const sub = THREE.AnimationUtils.subclip(clip, name, rng.a, rng.b, FPS);
@@ -2521,7 +2529,8 @@ const beg = { idle: 0, on: false, stage: 0, look: null, tilt: 0, tiltTo: 0, bow:
 const begBubble = $('#begBubble');
 const begQuiet = () => !busy && !game.on && !fetch_.mode && !petting && !phys.on && !phys.grab && !pointer.down && (frame === 's1' || frame === 's3') && !document.hidden
   && (current === actions.idle || current === actions.sit || current === actions.sitDown);
-function begOff() { beg.on = false; beg.stage = 0; beg.look = null; beg.tiltTo = 0; beg.bowTo = 0; begBubble.classList.remove('on'); document.body.classList.remove('beg'); }
+function begOff() { if (actions.bow && current === actions.bow) play('idle', { fade: 0.3 });
+  beg.on = false; beg.stage = 0; beg.look = null; beg.tiltTo = 0; beg.bowTo = 0; begBubble.classList.remove('on'); document.body.classList.remove('beg'); }
 function begStop() {
   beg.idle = 0; if (!beg.on) return;
   beg.tok++; if (beg.stage === 3 && !busy) fetch_.yaw = null;
@@ -2554,12 +2563,20 @@ async function begRun() {
     beg.stage = 3; beg.look = 'ball'; beg.tiltTo = 0;
     const baseY = frame === 's1' ? -0.35 : frame === 's3' ? -0.5 : -0.2, dx = ball.position.x - pivot.position.x, dz = ball.position.z - pivot.position.z;
     fetch_.yaw = Math.atan2(dx, dz) - baseY; await wait(450); if (!alive()) return;
-    beg.bowTo = 1; await wait(520); if (!alive()) return;
-    if (!phys.on && ball.parent === scene) { phys.on = true; phys.chase = false; phys.v.set(Math.sign(dx || 1) * 0.12, 0, 0.3); phys.vy = 0.5; }   // the nudge: the ball hops and rolls a little toward the viewer
-    await wait(650); if (!alive()) return;
-    beg.look = 'you'; yip(); await wait(420); if (!alive()) return;
-    yip(); await wait(1100); if (!alive()) return;
-    beg.bowTo = 0; fetch_.yaw = null; await wait(600); if (!alive()) return;
+    const nudge = () => { if (!phys.on && ball.parent === scene) { phys.on = true; phys.chase = false; phys.v.set(Math.sign(dx || 1) * 0.12, 0, 0.3); phys.vy = 0.5; } };   // the ball hops and rolls a little toward the viewer
+    if (actions.bow) {   // the real play bow (2.3 s): down at 0.45 s, held with a wiggle of the rump, up again at 1.9 s
+      const done = playAsync('bow', 0.2);
+      await wait(500); if (!alive()) return; nudge();
+      await wait(250); if (!alive()) return; beg.look = 'you'; yip();
+      await wait(420); if (!alive()) return; yip();
+      await done; if (!alive()) return; play('idle', { fade: 0.35 }); fetch_.yaw = null; await wait(500); if (!alive()) return;
+    } else {   // no clip: the same idea as offsets on the bones
+      beg.bowTo = 1; await wait(520); if (!alive()) return; nudge();
+      await wait(650); if (!alive()) return;
+      beg.look = 'you'; yip(); await wait(420); if (!alive()) return;
+      yip(); await wait(1100); if (!alive()) return;
+      beg.bowTo = 0; fetch_.yaw = null; await wait(600); if (!alive()) return;
+    }
     beg.tiltTo = 0.25; await wait(2200);   // and waits, head to one side
   } catch (e) { console.error('beg', e); }
   finally { if (beg.tok === tok) { if (beg.stage === 3 && !busy) fetch_.yaw = null; begOff(); beg.idle = 0; } }
