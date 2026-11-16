@@ -2524,7 +2524,7 @@ function wake(then) {
 // 3. still nothing: he turns to the ball, nudges it with his nose, drops into a play bow and yips
 // 4. meanwhile the "Бросить мяч" button pulses, and a tap anywhere throws the ball there at once
 // Any input stops it (begStop). The poses are procedural offsets on top of the clips: the rig has no bow of its own.
-const BEG = { first: 7, again: 12 };
+const BEG = { first: 7, again: 12, clip: false };   // clip: the Blender bow is OFF (Andrey, 2026-11-16: the body deforms badly in it)
 const beg = { idle: 0, on: false, stage: 0, look: null, tilt: 0, tiltTo: 0, bow: 0, bowTo: 0, snap: 0, cycles: 0, tok: 0, tap: 0 };
 const begBubble = $('#begBubble');
 const begQuiet = () => !busy && !game.on && !fetch_.mode && !petting && !phys.on && !phys.grab && !pointer.down && (frame === 's1' || frame === 's3') && !document.hidden
@@ -2564,7 +2564,7 @@ async function begRun() {
     const baseY = frame === 's1' ? -0.35 : frame === 's3' ? -0.5 : -0.2, dx = ball.position.x - pivot.position.x, dz = ball.position.z - pivot.position.z;
     fetch_.yaw = Math.atan2(dx, dz) - baseY; await wait(450); if (!alive()) return;
     const nudge = () => { if (!phys.on && ball.parent === scene) { phys.on = true; phys.chase = false; phys.v.set(Math.sign(dx || 1) * 0.12, 0, 0.3); phys.vy = 0.5; } };   // the ball hops and rolls a little toward the viewer
-    if (actions.bow) {   // the real play bow (2.3 s): down at 0.45 s, held with a wiggle of the rump, up again at 1.9 s
+    if (BEG.clip && actions.bow) {   // the real play bow (2.3 s): down at 0.45 s, held with a wiggle of the rump, up again at 1.9 s
       const done = playAsync('bow', 0.2);
       await wait(500); if (!alive()) return; nudge();
       await wait(250); if (!alive()) return; beg.look = 'you'; yip();
