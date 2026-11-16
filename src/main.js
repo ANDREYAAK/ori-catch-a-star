@@ -1136,9 +1136,8 @@ function rockSkin(base, dark, light) {
 }
 function frozenSkin(a, b) {
   return new THREE.MeshStandardMaterial({ map: texCanvas(256, 128, (x, w, h) => {
-    const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#fff'); g.addColorStop(0.24, a); g.addColorStop(0.5, b); g.addColorStop(0.76, a); g.addColorStop(1, '#fff'); x.fillStyle = g; x.fillRect(0, 0, w, h);
+    const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, a); g.addColorStop(0.5, b); g.addColorStop(1, a); x.fillStyle = g; x.fillRect(0, 0, w, h);
     x.fillStyle = 'rgba(30,70,150,.38)'; for (let i = 0; i < 9; i++) { x.beginPath(); x.ellipse(rnd(0, w), rnd(38, h - 38), rnd(10, 28), rnd(3, 7), 0, 0, 7); x.fill(); }
-    x.fillStyle = '#fff'; for (const top of [1, 0]) { x.beginPath(); x.moveTo(0, top ? 0 : h); for (let px = 0; px <= w; px += 8) x.lineTo(px, top ? rnd(18, 32) : h - rnd(18, 32)); x.lineTo(w, top ? 0 : h); x.closePath(); x.fill(); }   // ragged snow caps
     x.strokeStyle = 'rgba(255,255,255,.8)'; x.lineWidth = 1.2; for (let i = 0; i < 14; i++) { let px = rnd(0, w), py = rnd(30, h - 30); x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 4; k++) { px += rnd(-22, 22); py += rnd(-12, 12); x.lineTo(px, py); } x.stroke(); }   // frost veins
   }), roughness: 0.5, metalness: 0.05, emissive: 0x2a5a96, emissiveIntensity: 0.2 });
 }
@@ -1163,6 +1162,19 @@ const SKINS = [
   [voidSkin('#2a1f55', '#45308a', '#b39cff'), voidSkin('#1f1a48', '#3a2a78', '#d9f38b'), voidSkin('#33205c', '#56308f', '#ff8ad8')],
 ];
 jumpGeo.asteroid = new THREE.IcosahedronGeometry(PLANET_R * 1.04, 1);
+// a frozen planet wears a cap of snow: a thick mound over its top with a ragged, drooping edge
+function snowCapGeo(seed) {
+  const N = 10, M = 44, R = PLANET_R, pos = [], idx = [];
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= M; j++) {
+    const phi = j / M * Math.PI * 2, tMax = 0.93 + 0.2 * Math.sin(3 * phi + seed * 2.1) + 0.11 * Math.sin(7 * phi + seed * 5.3), th = i / N * tMax;
+    const r = R * (1.045 + 0.15 * Math.cos(th) ** 2) * (i === N ? 0.985 : 1);   // thickest at the top, tucked in at the edge
+    pos.push(r * Math.sin(th) * Math.cos(phi), r * Math.cos(th), r * Math.sin(th) * Math.sin(phi));
+  }
+  for (let i = 0; i < N; i++) for (let j = 0; j < M; j++) { const a = i * (M + 1) + j, b = a + M + 1; idx.push(a, a + 1, b, a + 1, b + 1, b); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+const snowCaps = [snowCapGeo(1), snowCapGeo(2.7), snowCapGeo(4.4)];
+const snowMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0, emissive: 0xc4dcff, emissiveIntensity: 0.32, side: THREE.DoubleSide });
 // a thin atmosphere around every planet, in its level's colour (a sprite behind the sphere: only the rim shows)
 const haloTex = spriteTex((x, s) => { const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(0.64, 'rgba(255,255,255,.85)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, s, s); }, 256);
 const haloMat = [[0xbfd0ff, 0.3], [0xffb98a, 0.28], [0x9fe4ff, 0.45], [0xff6a2a, 0.8], [0xa98bff, 0.75]].map(([color, opacity]) => new THREE.SpriteMaterial({ map: haloTex, color, opacity, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -1179,7 +1191,8 @@ function makePlatform(type, x, y) {
     let skin = game.skinZone ?? 0; if (skin > 4) skin = Math.floor(Math.random() * 5);
     const mat = type === 'rescue' ? jumpMat.lime : SKINS[skin][Math.floor(Math.random() * SKINS[skin].length)];
     body = new THREE.Mesh(skin === 1 && type !== 'rescue' ? jumpGeo.asteroid : jumpGeo.planet, mat); body.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * 6, (Math.random() - 0.5) * 0.4);
-    if (type !== 'rescue') { grp.userData.skin = skin; const halo = new THREE.Sprite(haloMat[skin]); halo.scale.setScalar(1.22); halo.position.z = -0.12; grp.add(halo); }
+    if (type !== 'rescue') { grp.userData.skin = skin; const halo = new THREE.Sprite(haloMat[skin]); halo.scale.setScalar(1.22); halo.position.z = -0.12; grp.add(halo);
+      if (skin === 2) { const cap = new THREE.Mesh(snowCaps[Math.floor(Math.random() * snowCaps.length)], snowMat); cap.rotation.set(rnd(-0.1, 0.1), rnd(0, 6.28), rnd(-0.1, 0.1)); grp.add(cap); } }
     if (type === 'move' || type === 'orbit') { const b = new THREE.Mesh(jumpGeo.belt, jumpMat.belt); b.rotation.x = Math.PI / 2 - 0.25; grp.add(b); }
   }
   grp.add(body);
